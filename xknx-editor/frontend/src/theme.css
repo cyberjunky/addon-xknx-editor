@@ -1,0 +1,56 @@
+/* Home Assistant look on Shoelace tokens: Roboto, HA blue, 12px cards, dark and light. */
+@import "@shoelace-style/shoelace/dist/themes/light.css";
+@import "@shoelace-style/shoelace/dist/themes/dark.css";
+
+:root {
+  --ha-primary: #03a9f4;
+  --ha-accent: #ff9800;
+  --ha-bg: #fafafa;
+  --ha-card: #ffffff;
+  --ha-text: #212121;
+  --ha-text-2: #727272;
+  --ha-divider: rgba(0, 0, 0, 0.12);
+  --ha-sidebar: #ffffff;
+  --ha-error: #db4437;
+  --ha-success: #43a047;
+  --ha-warning: #ffa600;
+  --ha-radius: 12px;
+
+  --sl-color-primary-500: var(--ha-primary);
+  --sl-color-primary-600: #0288d1;
+  --sl-color-primary-700: #0277bd;
+  --sl-font-sans: Roboto, "Segoe UI", system-ui, sans-serif;
+  --sl-border-radius-medium: 8px;
+  --sl-input-height-small: 28px;
+  --sl-input-height-medium: 36px;
+  --sl-font-size-medium: 14px;
+  --sl-font-size-small: 13px;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ha-bg: #111111;
+    --ha-card: #1c1c1c;
+    --ha-text: #e1e1e1;
+    --ha-text-2: #9b9b9b;
+    --ha-divider: rgba(255, 255, 255, 0.12);
+    --ha-sidebar: #1c1c1c;
+  }
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--ha-bg);
+  color: var(--ha-text);
+  font-family: var(--sl-font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+xknx-app {
+  height: 100%;
+}

@@ -1,0 +1,87 @@
+---
+name: Build add-on (dev)
+
+# Manual multi-arch build of the add-on image. Pushing is off by default; enable it once the
+# ghcr.io images are meant to be published.
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+    inputs:
+      archs:
+        description: "Comma separated add-on architectures (amd64,aarch64)"
+        required: true
+        default: "amd64"
+        type: string
+      push:
+        description: "Push the image to ghcr.io/<owner>/xknx-editor/<arch>:dev"
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  matrix:
+    name: Prepare build matrix
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.set.outputs.build }}
+    steps:
+      - name: Compose matrix
+        id: set
+        env:
+          ARCHS: ${{ inputs.archs }}
+        run: |
+          archs='{"amd64":   {"platform": "linux/amd64", "runner": "ubuntu-latest"},
+                  "aarch64": {"platform": "linux/arm64", "runner": "ubuntu-24.04-arm"}}'
+          build=$(echo "${archs}" | jq -c --arg a "${ARCHS}" \
+            '. as $m | [ ($a | split(",") | map(gsub(" "; "")) | .[]) as $arch | {arch: $arch} + $m[$arch] ]')
+          echo "build=${build}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.arch }}
+    needs: matrix
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.matrix.outputs.build) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Pack vendored editor sources
+        run: tar -czf xknx-editor/vendor/xknx-editor.tar.gz -C xknx-editor/vendor --exclude .venv xknx-editor
+
+      - name: Read build.yaml
+        id: cfg
+        run: |
+          echo "build_from=$(yq -r ".build_from.${{ matrix.arch }}" xknx-editor/build.yaml)" >> "$GITHUB_OUTPUT"
+          echo "version=$(yq -r ".version" xknx-editor/config.yaml)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Log in to ghcr.io
+        if: ${{ inputs.push }}
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: xknx-editor
+          platforms: ${{ matrix.platform }}
+          push: ${{ inputs.push }}
+          tags: ghcr.io/${{ github.repository_owner }}/xknx-editor/${{ matrix.arch }}:dev
+          build-args: |
+            BUILD_FROM=${{ steps.cfg.outputs.build_from }}
+            BUILD_ARCH=${{ matrix.arch }}
+            BUILD_VERSION=${{ steps.cfg.outputs.version }}
+            BUILD_REF=${{ github.sha }}
+            BUILD_DATE=${{ github.event.repository.updated_at }}

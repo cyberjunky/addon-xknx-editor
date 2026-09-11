@@ -1,0 +1,4 @@
+xknx-editor/vendor/
+xknx-editor/frontend/node_modules/
+xknx-editor/frontend/dist/
+xknx-editor/frontend/package-lock.json

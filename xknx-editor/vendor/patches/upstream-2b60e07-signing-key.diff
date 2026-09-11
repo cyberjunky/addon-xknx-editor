@@ -1,0 +1,151 @@
+diff --git a/xknx-editor/vendor/xknx-editor/packages/proj/src/xknxeditor/proj/__init__.py b/xknx-editor/vendor/xknx-editor/packages/proj/src/xknxeditor/proj/__init__.py
+index b5a5a40..b0426e2 100644
+--- a/xknx-editor/vendor/xknx-editor/packages/proj/src/xknxeditor/proj/__init__.py
++++ b/xknx-editor/vendor/xknx-editor/packages/proj/src/xknxeditor/proj/__init__.py
+@@ -23,6 +23,10 @@ from xknxeditor.proj.core import (
+     myknx_certificate_signer,
+     read_master_xml,
+     sign_exported_knxproj,
++    current_signing_key,
++    reset_signing_key,
++    set_signing_key,
++    signing_key_is_placeholder,
+ )
+ 
+ __all__ = [
+@@ -36,4 +40,8 @@ __all__ = [
+     "myknx_certificate_signer",
+     "read_master_xml",
+     "sign_exported_knxproj",
++    "current_signing_key",
++    "reset_signing_key",
++    "set_signing_key",
++    "signing_key_is_placeholder",
+ ]
+diff --git a/xknx-editor/vendor/xknx-editor/packages/proj/src/xknxeditor/proj/core/__init__.py b/xknx-editor/vendor/xknx-editor/packages/proj/src/xknxeditor/proj/core/__init__.py
+index e859edc..d63c35a 100644
+--- a/xknx-editor/vendor/xknx-editor/packages/proj/src/xknxeditor/proj/core/__init__.py
++++ b/xknx-editor/vendor/xknx-editor/packages/proj/src/xknxeditor/proj/core/__init__.py
+@@ -8,6 +8,12 @@ from xknxeditor.proj.core.knxproj_export import (
+     read_master_xml,
+ )
+ from xknxeditor.proj.core.knxproj_import import import_knxproj
++from xknxeditor.proj.core.knxproj_signing import (
++    current_signing_key,
++    reset_signing_key,
++    set_signing_key,
++    signing_key_is_placeholder,
++)
+ from xknxeditor.proj.core.myknx_cert import (
+     MyKnxError,
+     fetch_myknx_products,
+@@ -28,4 +34,8 @@ __all__ = [
+     "myknx_certificate_signer",
+     "read_master_xml",
+     "sign_exported_knxproj",
++    "current_signing_key",
++    "reset_signing_key",
++    "set_signing_key",
++    "signing_key_is_placeholder",
+ ]
+diff --git a/xknx-editor/vendor/xknx-editor/packages/proj/src/xknxeditor/proj/core/knxproj_signing.py b/xknx-editor/vendor/xknx-editor/packages/proj/src/xknxeditor/proj/core/knxproj_signing.py
+index 2eda462..1bcd3a8 100644
+--- a/xknx-editor/vendor/xknx-editor/packages/proj/src/xknxeditor/proj/core/knxproj_signing.py
++++ b/xknx-editor/vendor/xknx-editor/packages/proj/src/xknxeditor/proj/core/knxproj_signing.py
+@@ -16,7 +16,7 @@ digest of the folder's contents:
+ 4. the signature is ``RSA-PKCS#1v1.5(sha1)`` of that digest, base64 encoded.
+ 
+ Mirrors the vendor ``Knx.Ets.XmlSigning`` assembly (reference: OpenKNXproducer ``Signing/XmlSigner.cs``,
+-wrapped by :mod:`_dll_signer`). Signs every folder offline (see ``_P``). Folders with a file name
++wrapped by :mod:`_dll_signer`). Signs every folder offline (see :func:`set_signing_key`). Folders with a file name
+ outside the embedded NLS table cannot be ordered offline and are surfaced by
+ :func:`audit_and_sign_folders` (extend the table via ``nls_sortkeys.ps1``).
+ """
+@@ -30,11 +30,48 @@ from dataclasses import dataclass, field
+ 
+ from xknxeditor.proj.core._nls_sortkeys import CHAR_SORTKEYS
+ 
+-# (modulus, private_exponent, public_exponent, key_size_bytes). Throwaway 1024-bit RSA key: folders
+-# get a well-formed .signature (all an import needs).
+-_MODULUS = 0x9878171FC16318FD7295E0CB2442D0BEDB5435013A55E4806515F60B874D9B8415B18E5F508FA9758BDC443F4E1D2AF3E198213FD4BC4E2DD172D9D80364CDD2D59C05B85FC69B9035D37B9E4542C7AB848B5930CBC5040915DD3CE39AD10C9CC96883FDA6F165FCE665FCD4A4FCA8CDFE3C0DA5E58F6E1DE020B82404D8952F
+-_PRIVATE_EXPONENT = 0xC7BD8B8DAE6B8471838B95D28ACE7D698B2BE5C49607B032043BA0F9B967923497B6E42D39FCFAA363764C72228353A1EC08C0863ECBF21F542481FEDB7353AEB9271F334780282A57213AFBB405EE85916F18EC4435E3CAC0A76297CCAD31E2031C8681B9AF1121450330AA63EF5059524E91F1F6CDD84BB495E9F3D309FB1
+-_P = (_MODULUS, _PRIVATE_EXPONENT, 65537, (_MODULUS.bit_length() + 7) // 8)
++# Throwaway 1024-bit RSA key so folders get a well-formed .signature (all an import needs). Stored as
++# lowercase hex — the same format the Signing window shows/edits. Replaced at runtime via
++# set_signing_key() with the genuine key extracted from the user's ETS DLL (see key_extract).
++# (Ported from upstream 2b60e07 into the vendored tree; the add-on stores the key under /config.)
++_PLACEHOLDER_MODULUS = "9878171fc16318fd7295e0cb2442d0bedb5435013a55e4806515f60b874d9b8415b18e5f508fa9758bdc443f4e1d2af3e198213fd4bc4e2dd172d9d80364cdd2d59c05b85fc69b9035d37b9e4542c7ab848b5930cbc5040915dd3ce39ad10c9cc96883fda6f165fce665fcd4a4fca8cdfe3c0da5e58f6e1de020b82404d8952f"
++_PLACEHOLDER_PRIVATE_EXPONENT = "c7bd8b8dae6b8471838b95d28ace7d698b2be5c49607b032043ba0f9b967923497b6e42d39fcfaa363764c72228353a1ec08c0863ecbf21f542481fedb7353aeb9271f334780282a57213afbb405ee85916f18ec4435e3cac0a76297ccad31e2031c8681b9af1121450330aa63ef5059524e91f1f6cdd84bb495e9f3d309fb1"
++_MODULUS = int(_PLACEHOLDER_MODULUS, 16)
++_PRIVATE_EXPONENT = int(_PLACEHOLDER_PRIVATE_EXPONENT, 16)
++_default_params = (_MODULUS, _PRIVATE_EXPONENT, 65537, (_MODULUS.bit_length() + 7) // 8)
++_params = _default_params
++
++
++def set_signing_key(
++    modulus: int, private_exponent: int, public_exponent: int = 65537
++) -> None:
++    """Replace the signing key used by :func:`directory_signature`/:func:`verify_directory_signature`.
++
++    Call with the genuine key (e.g. extracted from an ETS DLL) so exports are signed ETS-valid.
++    """
++    global _params
++    _params = (
++        modulus,
++        private_exponent,
++        public_exponent,
++        (modulus.bit_length() + 7) // 8,
++    )
++
++
++def reset_signing_key() -> None:
++    """Restore the built-in placeholder key."""
++    global _params
++    _params = _default_params
++
++
++def current_signing_key() -> tuple[int, int, int]:
++    """Return the active ``(modulus, private_exponent, public_exponent)``."""
++    return (_params[0], _params[1], _params[2])
++
++
++def signing_key_is_placeholder() -> bool:
++    """Whether the active key is the built-in placeholder (signatures not ETS-valid)."""
++    return _params == _default_params
+ # ASN.1 DigestInfo prefix for a SHA-1 hash (RFC 3447).
+ _SHA1_DIGEST_INFO_PREFIX = bytes.fromhex("3021300906052b0e03021a05000414")
+ 
+@@ -102,10 +139,10 @@ def nls_directory_digest(files: Mapping[str, bytes]) -> bytes | None:
+ 
+ def _signature_from_digest(digest: bytes) -> bytes:
+     block = _SHA1_DIGEST_INFO_PREFIX + digest
+-    padding = b"\xff" * (_P[3] - 3 - len(block))
++    padding = b"\xff" * (_params[3] - 3 - len(block))
+     encoded = b"\x00\x01" + padding + b"\x00" + block
+-    signature = pow(int.from_bytes(encoded, "big"), _P[1], _P[0])
+-    return base64.b64encode(signature.to_bytes(_P[3], "big"))
++    signature = pow(int.from_bytes(encoded, "big"), _params[1], _params[0])
++    return base64.b64encode(signature.to_bytes(_params[3], "big"))
+ 
+ 
+ def directory_signature(files: Mapping[str, bytes]) -> bytes:
+@@ -137,14 +174,16 @@ def verify_directory_signature(files: Mapping[str, bytes], signature: bytes) ->
+         sig = base64.b64decode(signature.lstrip(b"\xef\xbb\xbf").strip())
+     except (ValueError, TypeError):
+         return False
+-    if len(sig) != _P[3]:
++    if len(sig) != _params[3]:
+         return False
+     digest = nls_directory_digest(files)
+     if digest is None:
+         return False
+-    recovered = pow(int.from_bytes(sig, "big"), _P[2], _P[0]).to_bytes(_P[3], "big")
++    recovered = pow(int.from_bytes(sig, "big"), _params[2], _params[0]).to_bytes(
++        _params[3], "big"
++    )
+     block = _SHA1_DIGEST_INFO_PREFIX + digest
+-    expected = b"\x00\x01" + b"\xff" * (_P[3] - 3 - len(block)) + b"\x00" + block
++    expected = b"\x00\x01" + b"\xff" * (_params[3] - 3 - len(block)) + b"\x00" + block
+     return recovered == expected
+ 
+ 

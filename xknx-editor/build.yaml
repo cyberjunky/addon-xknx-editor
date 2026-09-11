@@ -1,0 +1,6 @@
+---
+# Home Assistant's own Python base images: Alpine + s6-overlay + bashio + CPython 3.13.
+# The editor requires Python >= 3.13; dukpy and cryptography ship musllinux wheels for both archs.
+build_from:
+  aarch64: ghcr.io/home-assistant/aarch64-base-python:3.13-alpine3.23-2026.08.0
+  amd64: ghcr.io/home-assistant/amd64-base-python:3.13-alpine3.23-2026.08.0

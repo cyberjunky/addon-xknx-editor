@@ -1,0 +1,56 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Home Assistant add-on: XKNX Editor
+# Runs the web backend under uvicorn on the Ingress port.
+# ==============================================================================
+set -e
+
+declare ingress_port
+
+ingress_port="$(bashio::addon.ingress_port)"
+
+export XKNX_INGRESS_ENTRY
+export XKNX_INGRESS_ONLY
+export XKNX_LOG_LEVEL
+export XKNX_EDITOR_REF
+export XKNX_MCP_TOKEN
+export XKNX_PORT
+export XKNX_LANGUAGE
+export XKNX_CONFIG_DIR=/config
+export XKNX_SHARE_DIR=/share
+
+XKNX_INGRESS_ENTRY="$(bashio::addon.ingress_entry)"
+XKNX_INGRESS_ONLY="$(bashio::config 'ingress_only')"
+XKNX_LOG_LEVEL="$(bashio::config 'log_level')"
+XKNX_EDITOR_REF="$(cat /venv/upstream-ref 2>/dev/null || echo unknown)"
+XKNX_MCP_TOKEN="$(bashio::config 'mcp_token' '')"
+XKNX_PORT="${ingress_port}"
+XKNX_LANGUAGE="$(bashio::config 'language' 'en-US')"
+
+mkdir -p /config
+
+# The group monitor and the logs are timestamped by the backend with the container's local time.
+# The Supervisor normally injects TZ; if it did not, take Home Assistant's own timezone so
+# telegrams are never stamped in UTC, hours off the clock the user is looking at.
+if [ -z "${TZ:-}" ] && bashio::supervisor.ping; then
+    TZ="$(bashio::info.timezone)"
+    if [ -n "${TZ}" ] && [ "${TZ}" != "null" ]; then
+        export TZ
+    fi
+fi
+bashio::log.info "Local time $(date '+%Y-%m-%d %H:%M:%S %Z')"
+
+bashio::log.info "XKNX Editor add-on, editor sources ${XKNX_EDITOR_REF}"
+bashio::log.info "This program comes with ABSOLUTELY NO WARRANTY. It is free software under the GNU GPL v2; see /LICENSE."
+bashio::log.info "Listening on port ${ingress_port} (ingress_only=${XKNX_INGRESS_ONLY})"
+if [ -n "${XKNX_MCP_TOKEN}" ]; then
+    bashio::log.info "MCP server enabled at http://<home-assistant>:${ingress_port}/mcp (bearer token from the mcp_token option)"
+else
+    bashio::log.info "MCP server disabled (set the mcp_token option to enable it)"
+fi
+
+exec /venv/bin/python -m uvicorn xknxeditor_web.main:app \
+    --host 0.0.0.0 \
+    --port "${ingress_port}" \
+    --log-level "${XKNX_LOG_LEVEL}" \
+    --ws websockets

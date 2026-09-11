@@ -1,0 +1,99 @@
+diff --git a/packages/download/src/xknxeditor/download/procedure.py b/packages/download/src/xknxeditor/download/procedure.py
+index 98bd088..ad06800 100644
+--- a/packages/download/src/xknxeditor/download/procedure.py
++++ b/packages/download/src/xknxeditor/download/procedure.py
+@@ -1064,8 +1064,12 @@ class LoadProcedureRunner:
+             return
+         if isinstance(control, LdCtrlAbsSegment):
+             # An allocation whose range the image covers is an image backed write;
+-            # preview only the bytes the image actually writes (its mask).
+-            await self._diff_masked(control.address, control.size, segments)
++            # preview only the bytes the image actually writes (its mask). A range the
++            # image does NOT cover (a RAM/system segment) is allocated and left unwritten
++            # by _abs_segment, so it is a clean allocate-only preview here too, not an error.
++            await self._diff_masked(
++                control.address, control.size, segments, missing_ok=True
++            )
+             return
+         if isinstance(control, LdCtrlWriteProp):
+             index = await self._resolve_index(control)
+@@ -1117,7 +1121,12 @@ class LoadProcedureRunner:
+         )
+ 
+     async def _diff_masked(
+-        self, address: int, size: int, segments: list[SegmentDiff]
++        self,
++        address: int,
++        size: int,
++        segments: list[SegmentDiff],
++        *,
++        missing_ok: bool = False,
+     ) -> None:
+         """Diff each masked write run the image would apply within ``[address, size)``.
+ 
+@@ -1126,9 +1135,17 @@ class LoadProcedureRunner:
+         mean opposite things, so they must not be collapsed: :meth:`_write_mem` raises ``ImageError``
+         on ``None``, and a preflight that quietly recorded nothing would report a clean, no-change
+         preview for a download that cannot run.
++
++        ``missing_ok`` mirrors the caller's write path: an ``LdCtrlWriteMem`` write raises on missing
++        data, but an ``LdCtrlAbsSegment`` allocation only writes the image slice *if there is one*
++        (:meth:`_abs_segment` uses ``if runs:``) - a RAM/system segment the image never fills is
++        allocated and left unwritten, not an error. So the AbsSegment diff passes ``missing_ok=True``
++        and a ``None`` there is a clean, allocate-only preview, exactly as the download behaves.
+         """
+         runs = self.image.masked_writes(address, size)
+         if runs is None:
++            if missing_ok:
++                return
+             raise ImageError(
+                 f"no image data for address range {address:#06x}..{address + size:#06x}"
+             )
+diff --git a/packages/download/tests/test_preflight.py b/packages/download/tests/test_preflight.py
+index 947b319..bb1633b 100644
+--- a/packages/download/tests/test_preflight.py
++++ b/packages/download/tests/test_preflight.py
+@@ -169,6 +169,43 @@ async def test_preflight_previews_abs_segment_without_allocating() -> None:
+     assert segment.changed_bytes == 3  # device is all zeros
+ 
+ 
++async def test_preflight_abs_segment_uncovered_range_is_clean_not_error() -> None:
++    """A RAM/system AbsSegment the image never fills must preview as allocate-only, not fail.
++
++    Regression: a real device (Interra ITR524, schema 20) allocates a RAM segment at 0x0700 that
++    the download image does not cover. ``_abs_segment`` allocates it and writes nothing (``if
++    runs:``). The preflight must mirror that - a missing image slice for an *AbsSegment* is a clean
++    allocate-only preview, not the ``ImageError`` that a missing *WriteMem* slice raises. Sharing
++    ``_diff_masked``'s raise-on-None across both once made this device fail its read-only test even
++    though a real download of the same scope succeeded.
++    """
++    image = DownloadImage(
++        segments=(MemorySegment(address=0x4400, data=b"\x11\x22\x33"),),
++        properties=(),
++    )
++    application = _application(
++        LdCtrlAbsSegment(
++            obj_type=_ADDRESS_TABLE_TYPE,
++            occurrence=0,
++            seg_type=0,
++            address=0x0700,  # RAM; no image segment covers it
++            size=538,
++            access=0xFF,
++            mem_type=2,
++            seg_flags=0x80,
++        )
++    )
++    runner, device = _runner(application, image)
++
++    report = await runner.preflight()  # must not raise ImageError
++
++    assert not any(
++        isinstance(p, MemoryWrite) for p in device.sent
++    )  # allocate-only, read-only
++    assert report.segments == ()  # nothing to diff for the uncovered range
++    assert not report.has_changes
++
++
+ async def test_preflight_previews_property_without_writing() -> None:
+     application = _application(
+         LdCtrlWriteProp(

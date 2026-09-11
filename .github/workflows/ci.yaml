@@ -1,0 +1,146 @@
+---
+name: CI
+
+# Lint and test-build the add-on. Same checks as the shared hassio-addons workflow, minus its
+# zizmor SARIF upload, which requires GitHub code scanning (not available on private repos).
+# The build is a test only: nothing is pushed to a registry.
+
+# yamllint disable-line rule:truthy
+on:
+  push:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-addon:
+    name: Add-on linter
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run add-on linter
+        uses: frenck/action-addon-linter@b9cfd1bc62ba60d2c4fc96317b5f7ada5923f4a7 # v2.21.1
+        with:
+          community: true
+          path: ./xknx-editor
+
+  lint-hadolint:
+    name: Hadolint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run hadolint
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: ./xknx-editor/Dockerfile
+          failure-threshold: info
+
+  lint-yamllint:
+    name: YAMLLint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run yamllint
+        uses: frenck/action-yamllint@34b4bbcaeabedcfefad6adea8c5bbc42af0e2d47 # v1.5.0
+
+  lint-shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run shellcheck
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+        with:
+          ignore_paths: xknx-editor/vendor
+        env:
+          SHELLCHECK_OPTS: -s bash
+
+  lint-prettier:
+    name: Prettier
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run prettier
+        uses: creyD/prettier_action@8c18391fdc98ed0d884c6345f03975edac71b8f0 # v4.6
+        with:
+          prettier_version: 3.9.6
+          prettier_options: --check **/*.{json,js,md,yaml}
+
+  test-backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: "3.13"
+      - name: Sync the vendored editor workspace
+        working-directory: xknx-editor/vendor/xknx-editor
+        run: uv sync --frozen --no-dev
+      - name: Install the backend into that venv
+        working-directory: xknx-editor/vendor/xknx-editor
+        run: uv pip install --python .venv/bin/python -e "../../app[dev]"
+      - name: Run tests
+        working-directory: xknx-editor/app
+        run: ../vendor/xknx-editor/.venv/bin/python -m pytest -q
+
+  build:
+    name: Build ${{ matrix.arch }}
+    needs:
+      - lint-addon
+      - lint-hadolint
+      - lint-yamllint
+      - lint-shellcheck
+      - lint-prettier
+      - test-backend
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: aarch64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Pack vendored editor sources
+        run: tar -czf xknx-editor/vendor/xknx-editor.tar.gz -C xknx-editor/vendor --exclude .venv xknx-editor
+
+      - name: Read build.yaml
+        id: cfg
+        run: |
+          echo "build_from=$(yq -r ".build_from.${{ matrix.arch }}" xknx-editor/build.yaml)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Test build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: xknx-editor
+          platforms: ${{ matrix.platform }}
+          push: false
+          tags: xknx-editor/${{ matrix.arch }}:ci
+          build-args: |
+            BUILD_FROM=${{ steps.cfg.outputs.build_from }}
+            BUILD_ARCH=${{ matrix.arch }}
+            BUILD_VERSION=dev
+            BUILD_REF=${{ github.sha }}

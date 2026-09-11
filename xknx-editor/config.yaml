@@ -1,0 +1,41 @@
+---
+# Home Assistant add-on: XKNX Editor
+#
+# No `image:` key yet, so the Supervisor builds the Dockerfile on the Home Assistant host: add this
+# repository to the add-on store, or place this folder on the /addons share for a local build. The
+# `image:` line is added once images are published.
+#
+# `version: dev` is required here by the Home Assistant add-on linter; the release version lives
+# in the git tag (v0.1.0), CHANGELOG.md and the app package, and is stamped into this file when
+# an image is published. A copy on the /addons share is stamped `dev-<git sha>` by
+# tools/deploy-local.ps1 so the Supervisor notices each redeploy.
+name: XKNX Editor
+version: dev
+slug: xknx_editor
+description: Web-based KNX project editor built on xknx. Experimental.
+url: https://github.com/cyberjunky/addon-xknx-editor
+arch:
+  - aarch64
+  - amd64
+init: false
+ingress: true
+panel_icon: mdi:sitemap
+panel_title: XKNX Editor
+# Routing (multicast 224.0.23.12) and gateway discovery (SEARCH_REQUEST) need the host's network.
+host_network: true
+hassio_api: true
+map:
+  - addon_config:rw
+  - share:rw
+options:
+  log_level: info
+  ingress_only: true
+  language: en-US
+schema:
+  log_level: list(debug|info|warning|error)
+  ingress_only: bool
+  # Product-data language (parameter texts) and the UI language (en/nl/de available).
+  language: list(en-US|nl-NL|de-DE|fr-FR|es-ES|it-IT|da-DK|sv-SE|nb-NO|fi-FI|pl-PL|cs-CZ|pt-PT|ru-RU)
+  # Set a token to expose the MCP server at http://<home-assistant>:<port>/mcp for LLM clients.
+  mcp_token: password?
+# image: ghcr.io/cyberjunky/xknx-editor/{arch}

@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+.venv/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+xknx-editor/vendor/xknx-editor/.venv/
+xknx-editor/vendor/xknx-editor/config/
+xknx-editor/vendor/xknx-editor/knxprod/
+*.egg-info/
+.pytest_cache/
+xknx-editor/vendor/xknx-editor.tar.gz
+xknx-editor/frontend/node_modules/
+xknx-editor/frontend/dist/
+
+# Internal working notes: kept locally, never published.
+UPSTREAM.md
+docs/PLAN.md
+docs/TASKS.md
+docs/LICENSING.md

@@ -1,0 +1,849 @@
+diff --git a/packages/prod/src/xknxeditor/prod/parser_v2/context.py b/packages/prod/src/xknxeditor/prod/parser_v2/context.py
+index c982990..1f9a646 100644
+--- a/packages/prod/src/xknxeditor/prod/parser_v2/context.py
++++ b/packages/prod/src/xknxeditor/prod/parser_v2/context.py
+@@ -68,7 +68,7 @@ class EvalContext:
+     Reads fall through the state's parent chain (submodule → module → global); writes hit only the active state.
+     """
+ 
+-    __slots__ = ("_capture", "_idx", "_repeat_idx", "_scope")
++    __slots__ = ("_capture", "_idx", "_repeat_idx", "_scope", "_union_suppress")
+ 
+     def __init__(
+         self,
+@@ -76,22 +76,36 @@ class EvalContext:
+         repeat_idx: int = 1,
+         idx: ApplicationIndexer | None = None,
+         capture: EvalCapture | None = None,
++        union_suppress: bool = True,
+     ) -> None:
+         self._scope = scope
+         self._repeat_idx = repeat_idx
+         self._idx = idx
+         self._capture = capture
++        # False during the union-discovery pass (render both overlapping members so the reached one
++        # is recorded); True during the render pass (suppress the inactive overlay).
++        self._union_suppress = union_suppress
+ 
+     @property
+     def capture(self) -> EvalCapture | None:
+         return self._capture
+ 
++    @property
++    def union_suppress(self) -> bool:
++        return self._union_suppress
++
++    def is_discovered_active(self, ref_id: str) -> bool:
++        return self._scope.is_discovered_active(ref_id)
++
+     def get(self, ref_id: str) -> str | None:
+         return self._scope.get(ref_id)
+ 
+     def qualify(self, ref_id: str) -> str:
+         return self._scope.qualify(ref_id)
+ 
++    def qualify_local(self, ref_id: str) -> str:
++        return self._scope.qualify_local(ref_id)
++
+     def set(self, ref_id: str, value: str) -> None:
+         self._scope.set(ref_id, value)
+ 
+@@ -138,7 +152,9 @@ class EvalContext:
+         return self._repeat_idx
+ 
+     def repeat_ctx(self, repeat_idx: int) -> EvalContext:
+-        return EvalContext(self._scope, repeat_idx, self._idx, self._capture)
++        return EvalContext(
++            self._scope, repeat_idx, self._idx, self._capture, self._union_suppress
++        )
+ 
+     def get_arg_value(self, ref_id: str) -> int:
+         arg = self._scope.get_arg(ref_id)
+@@ -166,4 +182,9 @@ class EvalContext:
+             arg_defaults=arg_defaults,
+             ref_id=ref_id,
+         )
+-        return EvalContext(ms, idx=self._idx, capture=self._capture)
++        return EvalContext(
++            ms,
++            idx=self._idx,
++            capture=self._capture,
++            union_suppress=self._union_suppress,
++        )
+diff --git a/packages/prod/src/xknxeditor/prod/parser_v2/dynamic.py b/packages/prod/src/xknxeditor/prod/parser_v2/dynamic.py
+index b53527d..e6f8f17 100644
+--- a/packages/prod/src/xknxeditor/prod/parser_v2/dynamic.py
++++ b/packages/prod/src/xknxeditor/prod/parser_v2/dynamic.py
+@@ -6,6 +6,7 @@ from xknxeditor.namespaces.intermediate import (
+     ApplicationProgram,
+     ApplicationProgramChannel,
+     ApplicationProgramDynamic,
++    ApplicationProgramStaticParametersUnion,
+     Assign,
+     BinaryDataRef,
+     Button,
+@@ -18,6 +19,7 @@ from xknxeditor.namespaces.intermediate import (
+     DependentChannelChoose,
+     Module,
+     ModuleArg,
++    ModuleDefStaticParametersUnion,
+     ModuleInstance,
+     ParameterInstanceRef,
+     ParameterRefRef,
+@@ -125,6 +127,12 @@ class DynamicTreeBuilder:
+         # active, so it must not gate the capture chain (would wrongly disqualify every object under it).
+         # This set is shared by reference into the Choose/Repeat nodes and is complete once _build ends.
+         self._widget_param_refs: set[str] = set()
++        # Union members share the same memory offset; only one is the "active" overlay at a time.
++        # Map each of a union member's parameter-refs to its union siblings' parameter-refs, so a
++        # Choose on an inactive union member renders nothing (see ChooseWhenNode). Without this we
++        # render every union member's Choose branch, duplicating content (issue: MDT Glas push
++        # button "Display mode" — two ViewMode union members both rendered).
++        self._union_sibling_refs: dict[str, set[str]] = self._build_union_sibling_refs(app)
+         # Some applications (e.g. simple power supplies / couplers) carry no <Dynamic> section, or
+         # one that produces no tree. Such a device has no parameters/objects to show — build an
+         # empty tree so it still appears in the project instead of failing to load.
+@@ -136,6 +144,84 @@ class DynamicTreeBuilder:
+         )
+         self.tree: DynamicNode = _AppNode(node, global_param_ref_defaults)
+ 
++    def _build_union_sibling_refs(self, app: ApplicationProgram) -> dict[str, set[str]]:
++        """``parameter_ref_id -> the parameter-ref ids that compete with it for the same union memory``.
++
++        Union members overlay shared memory; only the *active* overlay's Choose should render (else
++        both members render, duplicating content — MDT Glas push button "Display mode"). Two members
++        of the same Union compete only when their bit ranges OVERLAP — that is how KNX memory-overlays
++        are mutually exclusive; members at disjoint offsets are independent sub-fields that can be
++        active simultaneously (so they must NOT suppress each other). Multiple ParameterRefs to the
++        SAME member are *aliases*, not competitors, so a ref never lists another ref of its own
++        member. Covers both application-level and module-definition unions."""
++        # member id -> (union key, start_bit, size_bits or None if unknown)
++        members: dict[str, tuple[int, int, int | None]] = {}
++
++        def _add_union(union: object, key: int) -> None:
++            for up in getattr(union, "parameter", []):
++                start = (getattr(up, "offset", 0) or 0) * 8 + (
++                    getattr(up, "bit_offset", 0) or 0
++                )
++                size: int | None = None
++                pt_id = getattr(up, "parameter_type", None)
++                pt = self.idx.parameter_types.get(pt_id) if pt_id else None
++                choice = getattr(pt, "choice", None) if pt is not None else None
++                if choice is not None:
++                    size = getattr(choice, "size_in_bit", None)
++                members[up.id] = (key, start, size)
++
++        params = app.static.parameters
++        if params is not None:
++            for p in params.choice:
++                if isinstance(p, ApplicationProgramStaticParametersUnion):
++                    _add_union(p, id(p))
++        for md in self.idx.module_defs.values():
++            mstatic = getattr(md, "static", None)
++            mparams = getattr(mstatic, "parameters", None) if mstatic else None
++            if mparams is not None:
++                for p in mparams.choice:
++                    if isinstance(p, ModuleDefStaticParametersUnion):
++                        _add_union(p, id(p))
++        if not members:
++            return {}
++
++        # member id -> its parameter-ref ids
++        member_refs: dict[str, set[str]] = {}
++        for pr in self.idx.parameter_refs.values():
++            if pr.ref_id in members:  # pr.ref_id is the underlying member id
++                member_refs.setdefault(pr.ref_id, set()).add(pr.id)
++        by_union: dict[int, list[str]] = {}
++        for mid, (key, _s, _z) in members.items():
++            by_union.setdefault(key, []).append(mid)
++
++        def _overlap(a: str, b: str) -> bool:
++            _k1, s1, z1 = members[a]
++            _k2, s2, z2 = members[b]
++            # Unknown size (e.g. a value type whose width is implicit/encoding-derived, like a
++            # float): compete only when the start bit is identical. Conservative on purpose — this
++            # can miss a genuine overlap (two overlapping members both render = duplicate content),
++            # but it never over-suppresses (never hides an active member). Under-suppression is the
++            # safe failure mode; guessing an implicit width could wrongly hide content.
++            if z1 is None or z2 is None:
++                return s1 == s2
++            return s1 < s2 + z2 and s2 < s1 + z1
++
++        result: dict[str, set[str]] = {}
++        for mids in by_union.values():
++            for m in mids:
++                if m not in member_refs:
++                    continue
++                competitors = {
++                    r
++                    for m2 in mids
++                    if m2 != m and m2 in member_refs and _overlap(m, m2)
++                    for r in member_refs[m2]
++                }
++                if competitors:
++                    for r in member_refs[m]:
++                        result[r] = competitors
++        return result
++
+     def _build(self, elem: object) -> DynamicNode | None:
+         if isinstance(elem, ApplicationProgramDynamic):
+             return GenericCollectionNode([self._build(child) for child in elem.choice])
+@@ -191,6 +277,7 @@ class DynamicTreeBuilder:
+                 condition_to_nodes,
+                 default_nodes,
+                 self._widget_param_refs,
++                self._union_sibling_refs.get(elem.param_ref_id),
+             )
+         elif isinstance(elem, Repeat):
+             # TODO: index substitution for non-Module children still missing
+@@ -262,8 +349,28 @@ class DynamicTreeBuilder:
+         return None
+ 
+ 
+-def _subtree_activeness(node: UiNode, instantiated: set[str]) -> tuple[bool, bool]:
+-    """Return ``(has_com_object, has_instantiated_com_object)`` for ``node``'s subtree."""
++def _com_object_number(ref_id: str) -> str:
++    """A com-object ref canonicalized by dropping ONLY the terminal ComObjectRef qualifier
++    (``_R-<m>``), while preserving any module-instance path (``MD-…_M-…_MI-…_O-…``).
++
++    Two refs of the SAME object differ only in ``R-``; the imported instance and the parameter-driven
++    derivation can pick a different ``R-`` for one object (e.g. after a channel is deactivated and
++    re-activated), so section activeness is matched on this identity, not the full ref. Stripping
++    ONLY the terminal ``_R-<m>`` (not down to ``O-<n>``) keeps distinct module instances distinct —
++    otherwise one stored ``O-2`` would keep every repeated module instance's ``O-2`` section alive."""
++    head, sep, tail = ref_id.rpartition("_")
++    if sep and tail.startswith("R-"):
++        return head
++    return ref_id
++
++
++def _subtree_activeness(
++    node: UiNode, instantiated: set[str], instantiated_nums: set[str]
++) -> tuple[bool, bool]:
++    """Return ``(has_com_object, has_instantiated_com_object)`` for ``node``'s subtree.
++
++    A subtree com-object counts as instantiated if its full ref matches, OR its ComObject id
++    (``O-<n>``) matches an instantiated object (see :func:`_com_object_number`)."""
+     from .ui import UiComObject, UiParameterBlock, UiTab
+ 
+     has_co = has_inst = False
+@@ -272,7 +379,10 @@ def _subtree_activeness(node: UiNode, instantiated: set[str]) -> tuple[bool, boo
+         current = stack.pop()
+         if isinstance(current, UiComObject):
+             has_co = True
+-            if current.ref_id in instantiated:
++            if (
++                current.ref_id in instantiated
++                or _com_object_number(current.ref_id) in instantiated_nums
++            ):
+                 has_inst = True
+         elif isinstance(current, (UiTab, UiParameterBlock)):
+             stack.extend(current.children)
+@@ -297,6 +407,7 @@ def _collect_refs(node: UiNode, params: set[str], cos: set[str]) -> None:
+ def _prune_inactive(
+     nodes: list[UiNode],
+     instantiated: set[str],
++    instantiated_nums: set[str],
+     dropped_params: set[str],
+     dropped_cos: set[str],
+     kept_params: set[str],
+@@ -315,13 +426,14 @@ def _prune_inactive(
+     result: list[UiNode] = []
+     for node in nodes:
+         if isinstance(node, (UiTab, UiParameterBlock)):
+-            has_co, has_inst = _subtree_activeness(node, instantiated)
++            has_co, has_inst = _subtree_activeness(node, instantiated, instantiated_nums)
+             if has_co and not has_inst:
+                 _collect_refs(node, dropped_params, dropped_cos)
+                 continue
+             pruned = _prune_inactive(
+                 list(node.children),
+                 instantiated,
++                instantiated_nums,
+                 dropped_params,
+                 dropped_cos,
+                 kept_params,
+@@ -358,8 +470,21 @@ class DynamicUI:
+         )
+         self._ui: list[UiNode] | None = None
+ 
++    def _discover_union_activity(self) -> None:
++        """Discovery pass ahead of a render eval: evaluate the tree WITHOUT union suppression so every
++        reached Union member is marked active, then freeze that as the discovery snapshot. The render
++        pass reads it (is_discovered_active) to pick each Union's active overlay order-independently —
++        the reached member wins, not a sibling carrying a stale explicit value from an inactive
++        branch (which would drop a freshly-activated member's content)."""
++        self._state.reset_active()
++        self._tree.eval(
++            EvalContext(self._state, idx=self._idx, union_suppress=False)
++        )
++        self._state.snapshot_discovered_active()
++
+     def ui(self) -> list[UiNode]:
+         if self._ui is None:
++            self._discover_union_activity()
+             self._state.reset_active()
+             self._ui = self._tree.eval(EvalContext(self._state, idx=self._idx))
+             self._state.trim_to_active()
+@@ -379,12 +504,19 @@ class DynamicUI:
+         instantiated = self._state.com_obj_instance_ref_ids()
+         if not instantiated or self._ui is None:
+             return
++        instantiated_nums = {_com_object_number(r) for r in instantiated}
+         dropped_params: set[str] = set()
+         dropped_cos: set[str] = set()
+         kept_params: set[str] = set()
+         kept_cos: set[str] = set()
+         self._ui = _prune_inactive(
+-            self._ui, instantiated, dropped_params, dropped_cos, kept_params, kept_cos
++            self._ui,
++            instantiated,
++            instantiated_nums,
++            dropped_params,
++            dropped_cos,
++            kept_params,
++            kept_cos,
+         )
+         # Only deactivate refs that do not also occur in a surviving section.
+         self._state.discard_active_refs(
+@@ -397,6 +529,7 @@ class DynamicUI:
+         com-object set — ``_prune_inactive_channels`` biases toward the stale saved instances, so it
+         must be skipped here. Invalidates the cached ``ui()`` so the next call recomputes (and
+         re-prunes) cleanly."""
++        self._discover_union_activity()
+         self._state.reset_active()
+         tree = self._tree.eval(EvalContext(self._state, idx=self._idx))
+         self._state.trim_to_active()
+@@ -408,6 +541,7 @@ class DynamicUI:
+         parameter value: every com-object emitted under a Choose/Repeat driven by that parameter.
+         Invalidates the cached ``ui()`` so the next call recomputes cleanly."""
+         capture = EvalCapture(param_ref_id)
++        self._discover_union_activity()
+         self._state.reset_active()
+         self._tree.eval(EvalContext(self._state, idx=self._idx, capture=capture))
+         self._state.trim_to_active()
+@@ -426,6 +560,7 @@ class DynamicUI:
+         individual channel whose objects sit under an outer selector that is NOT active because its
+         widget only lives in a different function branch. Invalidates the cached ``ui()``."""
+         capture = EvalCapture(None)  # record every emitted object's gate chain
++        self._discover_union_activity()
+         self._state.reset_active()
+         self._tree.eval(EvalContext(self._state, idx=self._idx, capture=capture))
+         self._state.trim_to_active()
+diff --git a/packages/prod/src/xknxeditor/prod/parser_v2/nodes/choose.py b/packages/prod/src/xknxeditor/prod/parser_v2/nodes/choose.py
+index 6772131..7f4254f 100644
+--- a/packages/prod/src/xknxeditor/prod/parser_v2/nodes/choose.py
++++ b/packages/prod/src/xknxeditor/prod/parser_v2/nodes/choose.py
+@@ -43,6 +43,7 @@ class ChooseWhenNode(DynamicNode):
+         condition_to_nodes: dict[str, list[DynamicNode | None]],
+         default_nodes: list[DynamicNode | None] | None,
+         widget_param_refs: set[str] | None = None,
++        union_sibling_refs: set[str] | None = None,
+     ):
+         self._param_ref_id = param_ref_id
+         self._condition_to_nodes = condition_to_nodes
+@@ -52,6 +53,11 @@ class ChooseWhenNode(DynamicNode):
+         # can never be active, so it must not be pushed onto the capture chain — otherwise it would
+         # disqualify every object under it (chain-AND) even though the branch is genuinely selected.
+         self._widget_param_refs = widget_param_refs
++        # If this Choose's parameter is a Union member overlaying shared memory, the parameter-refs
++        # that COMPETE with it (other members at the same offset — aliases of the same member are
++        # excluded). Only the active overlay's Choose should render; a Choose on an inactive member
++        # renders nothing (see eval), else overlapping members both render (duplicate content).
++        self._union_sibling_refs = union_sibling_refs
+ 
+     def _gates_capture(self) -> bool:
+         return self._widget_param_refs is None or (
+@@ -59,6 +65,19 @@ class ChooseWhenNode(DynamicNode):
+         )
+ 
+     def eval(self, ctx: EvalContext) -> list[UiNode]:
++        # Union-member gate: this Choose's parameter shares memory with its siblings, so only the
++        # ACTIVE overlay's content should render (else overlapping members duplicate content). The
++        # active overlay is the member REACHED under the current values, determined order-independently
++        # by a discovery pass (union suppression off) that runs before this render pass. Suppress this
++        # member iff it was not reached but a sibling was. During discovery (union_suppress False) this
++        # is skipped so both members render and the reached one is recorded.
++        if (
++            self._union_sibling_refs
++            and ctx.union_suppress
++            and not ctx.is_discovered_active(self._param_ref_id)
++            and any(ctx.is_discovered_active(sib) for sib in self._union_sibling_refs)
++        ):
++            return []
+         value = ctx.get(self._param_ref_id) or ""
+         result: list[UiNode] = []
+         matched = False
+@@ -68,7 +87,13 @@ class ChooseWhenNode(DynamicNode):
+         # test (an object is active only if every gate on its path is driven by an active parameter).
+         gating = capture is not None and self._gates_capture()
+         if gating:
+-            capture.push(self._param_ref_id)  # type: ignore[union-attr]
++            # Push the gate id qualified in the scope that OWNS it: a module-local gate becomes
++            # instance-qualified (matching the qualified ids that com-object leaves record and that
++            # ``active_param_refs()`` returns for module scopes), while a gate on an ancestor/app
++            # parameter stays unqualified (it is marked active in the ancestor scope). ``qualify_local``
++            # (not blind ``qualify``) so an inherited gate param is not mis-qualified — otherwise its
++            # com-objects drop from the chain-AND active set. Identity at global scope.
++            capture.push(ctx.qualify_local(self._param_ref_id))  # type: ignore[union-attr]
+         try:
+             for condition, nodes in self._condition_to_nodes.items():
+                 if satisfies(condition, value):
+diff --git a/packages/prod/src/xknxeditor/prod/parser_v2/nodes/repeat.py b/packages/prod/src/xknxeditor/prod/parser_v2/nodes/repeat.py
+index 85aeca8..d11f361 100644
+--- a/packages/prod/src/xknxeditor/prod/parser_v2/nodes/repeat.py
++++ b/packages/prod/src/xknxeditor/prod/parser_v2/nodes/repeat.py
+@@ -49,7 +49,9 @@ class RepeatNode(DynamicNode):
+             self._widget_param_refs is None or count_param in self._widget_param_refs
+         )
+         if gating and count_param:
+-            capture.push(count_param)  # type: ignore[union-attr]
++            # Qualify the count gate in its OWNING scope (see ChooseWhenNode): module-local ->
++            # instance-qualified, ancestor/app param -> unqualified. Identity at global scope.
++            capture.push(ctx.qualify_local(count_param))  # type: ignore[union-attr]
+         try:
+             for i in range(1, self._count(ctx) + 1):
+                 rctx = ctx.repeat_ctx(i)
+diff --git a/packages/prod/src/xknxeditor/prod/parser_v2/state.py b/packages/prod/src/xknxeditor/prod/parser_v2/state.py
+index dc389bd..513cad0 100644
+--- a/packages/prod/src/xknxeditor/prod/parser_v2/state.py
++++ b/packages/prod/src/xknxeditor/prod/parser_v2/state.py
+@@ -69,6 +69,8 @@ class ParameterState:
+         "_alloc_positions",
+         "_children",
+         "_com_obj_instance_refs",
++        "_discovered_active_param_refs",
++        "_known_param_ref_values",
+         "_param_ref_defaults",
+         "_parent",
+         "_text",
+@@ -82,10 +84,21 @@ class ParameterState:
+         param_ref_defaults: dict[str, str] | None = None,
+     ) -> None:
+         self.param_ref_id_to_value: dict[str, str] = dict(values or {})
++        # Durable store of every EXPLICIT value ever imported or set in this scope. Unlike
++        # param_ref_id_to_value it is never trimmed to the active set, so a parameter whose block was
++        # deactivated (its value dropped from the active/encoding map by trim_to_active) can still be
++        # resolved to its real value when the block is reactivated -- otherwise get() falls back to a
++        # static default and the eval picks a different Choose branch (different ComObjectRef).
++        self._known_param_ref_values: dict[str, str] = dict(values or {})
+         self._parent: ParameterState | None = parent
+         self._children: dict[str, ModuleState] = {}
+         self._text: dict[str, str] = {}
+         self._active_param_refs: set[str] = set()
++        # Params marked active during the union-discovery pass (a full eval WITHOUT union
++        # suppression). Frozen by snapshot_discovered_active() before the render pass, then read by
++        # a Union-member Choose to decide the active overlay order-independently (the reached member
++        # wins, not the one carrying a stale explicit value from an inactive branch).
++        self._discovered_active_param_refs: set[str] = set()
+         self._active_module_keys: set[str] = set()
+         self._active_com_object_refs: set[str] = set()
+         self._alloc_positions: dict[str, int] = {}
+@@ -93,6 +106,11 @@ class ParameterState:
+         self._com_obj_instance_refs: dict[str, ComObjectInstanceRef] = {}
+ 
+     def get(self, ref_id: str) -> str | None:
++        # Prefer the durable known value: it survives trim_to_active(), so an inactive block's
++        # imported value still drives branch selection when the block is (re)evaluated.
++        known = self._known_param_ref_values.get(ref_id)
++        if known is not None:
++            return known
+         val = self.param_ref_id_to_value.get(ref_id)
+         if val is not None:
+             return val
+@@ -102,6 +120,19 @@ class ParameterState:
+                 return parent_val
+         return self._param_ref_defaults.get(ref_id)
+ 
++    def has_explicit_param(self, ref_id: str) -> bool:
++        """Whether ``ref_id`` has an explicit (imported or set) value in this scope or a parent.
++
++        Distinguishes a real, chosen value from a mere static default -- used to resolve which member
++        of a Union is the active overlay independent of node/source ordering."""
++        if ref_id in self._known_param_ref_values:
++            return True
++        return (
++            self._parent.has_explicit_param(ref_id)
++            if self._parent is not None
++            else False
++        )
++
+     def set_param_ref_defaults(self, param_ref_defaults: dict[str, str]) -> None:
+         self._param_ref_defaults = param_ref_defaults
+ 
+@@ -113,6 +144,7 @@ class ParameterState:
+ 
+     def set(self, ref_id: str, value: str) -> None:
+         self.param_ref_id_to_value[ref_id] = value
++        self._known_param_ref_values[ref_id] = value
+ 
+     def set_text(self, ref_id: str, text: str) -> None:
+         self._text[ref_id] = text
+@@ -121,6 +153,13 @@ class ParameterState:
+         return self._text.get(ref_id)
+ 
+     def mark_active_param(self, ref_id: str) -> None:
++        # A rendered widget re-enters the active/encoding map: restore its durable known value so a
++        # parameter whose value was trimmed while inactive encodes its real value once reactivated,
++        # not a static default.
++        if ref_id not in self.param_ref_id_to_value:
++            known = self._known_param_ref_values.get(ref_id)
++            if known is not None:
++                self.param_ref_id_to_value[ref_id] = known
+         self._active_param_refs.add(ref_id)
+ 
+     def mark_active_com_object(self, ref_id: str) -> None:
+@@ -155,7 +194,11 @@ class ParameterState:
+         self._alloc_positions[alloc_id] = position
+ 
+     def reset_active(self) -> None:
+-        """Reset active ref sets ahead of the next traversal."""
++        """Reset active ref sets ahead of the next traversal.
++
++        The discovered-active snapshot is intentionally NOT cleared: it is set once by the
++        discovery pass and consumed by the following render pass (which resets the live active
++        sets in between)."""
+         self._active_param_refs.clear()
+         self._active_module_keys.clear()
+         self._active_com_object_refs.clear()
+@@ -163,6 +206,26 @@ class ParameterState:
+         for child in self._children.values():
+             child.reset_active()
+ 
++    def snapshot_discovered_active(self) -> None:
++        """Freeze the current per-scope active params as the union-discovery result.
++
++        Called after a full eval with union suppression disabled; the render pass then reads it via
++        is_discovered_active() so a Union member's overlay decision does not depend on eval order."""
++        self._discovered_active_param_refs = set(self._active_param_refs)
++        for child in self._children.values():
++            child.snapshot_discovered_active()
++
++    def is_discovered_active(self, ref_id: str) -> bool:
++        """Whether ``ref_id`` was reached (marked active) in the union-discovery pass, in this scope
++        or a parent. Mirrors is_active_param but reads the frozen discovery snapshot."""
++        if ref_id in self._discovered_active_param_refs:
++            return True
++        return (
++            self._parent.is_discovered_active(ref_id)
++            if self._parent is not None
++            else False
++        )
++
+     def discard_active_refs(
+         self, param_ref_ids: set[str], com_object_ref_ids: set[str]
+     ) -> None:
+@@ -207,6 +270,25 @@ class ParameterState:
+     def qualify(self, ref_id: str) -> str:
+         return ref_id
+ 
++    def qualify_local(self, ref_id: str) -> str:
++        """Qualify ``ref_id`` in the scope that actually OWNS it, not the current one.
++
++        A module-scoped Choose/Repeat can gate on an ancestor/application parameter (its ref is not
++        module-def-local): that ref is marked active in the ancestor scope (unqualified), so its gate
++        must stay unqualified too. Only a ref owned by THIS module scope (in its local value/default
++        stores) gets the module-instance prefix. Prevents mis-qualifying inherited gate params, which
++        would drop their com-objects from the chain-AND active set. (Com-object leaves are always
++        current-scope-local, so they keep the plain ``qualify``.)"""
++        if (
++            ref_id in self._known_param_ref_values
++            or ref_id in self.param_ref_id_to_value
++            or ref_id in self._param_ref_defaults
++        ):
++            return self.qualify(ref_id)
++        if self._parent is not None:
++            return self._parent.qualify_local(ref_id)
++        return self.qualify(ref_id)
++
+     def find_scope_for_qualified(
+         self, ref_id: str
+     ) -> tuple[ParameterState, str] | None:
+@@ -229,8 +311,10 @@ class ParameterState:
+         if found is not None:
+             scope, local = found
+             scope.param_ref_id_to_value.pop(local, None)
++            scope._known_param_ref_values.pop(local, None)
+         else:
+             self.param_ref_id_to_value.pop(ref_id, None)
++            self._known_param_ref_values.pop(ref_id, None)
+ 
+     def module_child(
+         self,
+@@ -324,12 +408,10 @@ class GlobalState(ParameterState):
+                     app_prefix = ref_id[:p]
+                     suffix = ref_id[p + len(mid) :]
+                     ms.module_instance_id = app_prefix + mid
+-                    ms.param_ref_id_to_value[app_prefix + mid_to_mdid[mid] + suffix] = (
+-                        value
+-                    )
++                    ms.set(app_prefix + mid_to_mdid[mid] + suffix, value)
+                     break
+             else:
+-                root.param_ref_id_to_value[ref_id] = value
++                root.set(ref_id, value)
+ 
+         for coir in com_object_instance_refs or []:
+             root._com_obj_instance_refs[coir.ref_id] = coir
+diff --git a/packages/prod/tests/parser_v2/nodes/test_choose.py b/packages/prod/tests/parser_v2/nodes/test_choose.py
+index f24694c..b615d5e 100644
+--- a/packages/prod/tests/parser_v2/nodes/test_choose.py
++++ b/packages/prod/tests/parser_v2/nodes/test_choose.py
+@@ -108,3 +108,62 @@ class TestChooseWhenNode:
+         assert node.eval(EvalContext(GlobalState({_REF_MODE: "130"}))) == [_UI_A]
+         assert node.eval(EvalContext(GlobalState({_REF_MODE: "36"}))) == [_UI_A]
+         assert node.eval(EvalContext(GlobalState({_REF_MODE: "99"}))) == []
++
++
++_REF_A = f"{_BASE}_UP-1_R-1"  # a Union member's parameter-ref
++_REF_B = f"{_BASE}_UP-2_R-2"  # its union sibling (same memory overlay)
++
++
++class TestChooseWhenNodeUnionGating:
++    """A Choose on a Union member must render only when it is the ACTIVE overlay. Union members share
++    memory, so both would otherwise match the same shared value and render duplicate content. The
++    active overlay is the member REACHED in the discovery pass (frozen via snapshot_discovered_active);
++    the render pass suppresses a member that was not reached while a sibling was."""
++
++    def test_inactive_union_member_renders_nothing_when_sibling_reached(self):
++        node = ChooseWhenNode(_REF_A, {"0": [UiLeaf(_UI_A)]}, None, None, {_REF_B})
++        state = GlobalState({_REF_A: "0", _REF_B: "0"})
++        state.mark_active_param(_REF_B)  # the sibling was reached in discovery...
++        state.snapshot_discovered_active()  # ...frozen as the discovery result
++        assert node.eval(EvalContext(state)) == []
++
++    def test_active_union_member_renders_normally(self):
++        node = ChooseWhenNode(_REF_A, {"0": [UiLeaf(_UI_A)]}, None, None, {_REF_B})
++        state = GlobalState({_REF_A: "0", _REF_B: "0"})
++        state.mark_active_param(_REF_A)  # this member was reached in discovery
++        state.snapshot_discovered_active()
++        assert node.eval(EvalContext(state)) == [_UI_A]
++
++    def test_no_sibling_reached_renders_normally(self):
++        # Neither member reached in discovery -> do not suppress.
++        node = ChooseWhenNode(_REF_A, {"0": [UiLeaf(_UI_A)]}, None, None, {_REF_B})
++        assert node.eval(EvalContext(GlobalState({_REF_A: "0"}))) == [_UI_A]
++
++    def test_discovery_pass_never_suppresses(self):
++        # During discovery (union_suppress=False) both members render even when a sibling is already
++        # marked active, so the reached member is recorded regardless of eval order.
++        node = ChooseWhenNode(_REF_A, {"0": [UiLeaf(_UI_A)]}, None, None, {_REF_B})
++        state = GlobalState({_REF_A: "0", _REF_B: "0"})
++        state.mark_active_param(_REF_B)
++        state.snapshot_discovered_active()
++        assert node.eval(EvalContext(state, union_suppress=False)) == [_UI_A]
++
++    def test_stale_explicit_sibling_does_not_suppress_reached_member(self):
++        # Fresh-activation regression: the sibling carries a stale explicit value (imported for an
++        # inactive branch), but THIS member is the one reached under the current values. The active
++        # overlay is decided by the discovery result, not by which member has an explicit value, so
++        # this member must render (a freshly-activated function's secondary object is not dropped).
++        node = ChooseWhenNode(_REF_A, {"0": [UiLeaf(_UI_A)]}, None, None, {_REF_B})
++        state = GlobalState({_REF_A: "0"})
++        state.set(_REF_B, "0")  # sibling has an explicit value but is NOT reached
++        state.mark_active_param(_REF_A)  # only this member reached in discovery
++        state.snapshot_discovered_active()
++        assert node.eval(EvalContext(state)) == [_UI_A]
++
++    def test_non_union_choose_unaffected(self):
++        # No union siblings -> a plain Choose ignores discovery state entirely.
++        node = ChooseWhenNode(_REF_MODE, {"1": [UiLeaf(_UI_A)]}, None)
++        state = GlobalState({_REF_MODE: "1"})
++        state.mark_active_param(_REF_A)
++        state.snapshot_discovered_active()
++        assert node.eval(EvalContext(state)) == [_UI_A]
+diff --git a/packages/prod/tests/parser_v2/test_context.py b/packages/prod/tests/parser_v2/test_context.py
+index eed7476..e5944af 100644
+--- a/packages/prod/tests/parser_v2/test_context.py
++++ b/packages/prod/tests/parser_v2/test_context.py
+@@ -316,6 +316,125 @@ class TestSetInstanceRef:
+         assert state.param_ref_id_to_value[_QUALIFIED_REF] == "5"
+ 
+ 
++_REF_ACT = f"{_BASE}_P-10_R-10"  # activation param (e.g. "Tastenpaar = aktiv")
++_REF_FUNC = f"{_BASE}_P-11_R-11"  # function-type param inside the gated block
++_OBJ_IMPORTED = f"{_BASE}_P-12_R-12"  # object of the imported branch (e.g. R-1980)
++_OBJ_DEFAULT = f"{_BASE}_P-13_R-13"  # object of the static-default branch (e.g. R-1266)
++
++
++class TestReactivateRetainsImportedValue:
++    """Regression: reactivating a deactivated, parameter-gated block must reselect the SAME branch
++    it was imported with, not the static default.
++
++    At the state/eval level: an activation param gates a block; inside it a Choose on a
++    function-type param selects the object.
++    Deactivating trims the function value out of the active map; without the durable known-value
++    store, reactivation resolves the function param to its default and picks a DIFFERENT branch
++    (a different ComObjectRef, e.g. R-1266 instead of R-1980)."""
++
++    def _tree(self) -> tuple[DynamicNode, DynamicNode]:
++        # func_choose emits the imported-branch object for value "temp", else the default-branch one.
++        func_choose = ChooseWhenNode(
++            _REF_FUNC,
++            {"temp": [_ParamLeaf(_REF_FUNC), _ParamLeaf(_OBJ_IMPORTED)]},
++            default_nodes=[_ParamLeaf(_REF_FUNC), _ParamLeaf(_OBJ_DEFAULT)],
++        )
++        # The activation widget is always rendered; the block only when it is "1".
++        act_leaf = _ParamLeaf(_REF_ACT)
++        block = ChooseWhenNode(_REF_ACT, {"1": [func_choose]}, default_nodes=None)
++        return act_leaf, block
++
++    def _cycle(self, state: GlobalState, nodes: tuple[DynamicNode, DynamicNode]) -> None:
++        state.reset_active()
++        ctx = EvalContext(state)
++        for node in nodes:
++            node.eval(ctx)
++        state.trim_to_active()
++
++    def test_reactivation_reselects_imported_branch(self) -> None:
++        # Imported active: activation "1", function "temp".
++        state = GlobalState.from_project(
++            [
++                ParameterInstanceRef(ref_id=_REF_ACT, value="1"),
++                ParameterInstanceRef(ref_id=_REF_FUNC, value="temp"),
++            ]
++        )
++        nodes = self._tree()
++
++        self._cycle(state, nodes)  # import: imported branch active
++        assert _OBJ_IMPORTED in state.active_param_refs()
++
++        state.set(_REF_ACT, "0")  # deactivate -> block gone, func value trimmed from active map
++        self._cycle(state, nodes)
++        assert _REF_FUNC not in state.param_ref_id_to_value  # trimmed while inactive
++
++        state.set(_REF_ACT, "1")  # reactivate
++        self._cycle(state, nodes)
++        # The imported function value must survive and reselect the imported branch, NOT the default.
++        assert _OBJ_IMPORTED in state.active_param_refs()
++        assert _OBJ_DEFAULT not in state.active_param_refs()
++
++
++class TestKnownValueStore:
++    def test_get_survives_trim_for_inactive_param(self) -> None:
++        state = GlobalState.from_project(
++            [ParameterInstanceRef(ref_id=_REF_TARGET, value="imported")]
++        )
++        state.reset_active()
++        state.trim_to_active()  # _REF_TARGET never marked active -> dropped from active map
++        assert _REF_TARGET not in state.param_ref_id_to_value
++        assert state.get(_REF_TARGET) == "imported"  # ...but still resolvable
++        assert state.has_explicit_param(_REF_TARGET) is True
++
++    def test_default_only_param_is_not_explicit(self) -> None:
++        state = GlobalState(param_ref_defaults={_REF_TARGET: "5"})
++        assert state.get(_REF_TARGET) == "5"
++        assert state.has_explicit_param(_REF_TARGET) is False
++
++    def test_clear_instance_ref_drops_known_value(self) -> None:
++        state = GlobalState.from_project(
++            [ParameterInstanceRef(ref_id=_REF_TARGET, value="imported")]
++        )
++        state.clear_instance_ref(_REF_TARGET)
++        assert state.has_explicit_param(_REF_TARGET) is False
++        assert state.get(_REF_TARGET) is None
++
++
++_REF_UA = f"{_BASE}_P-20_R-20"  # union member A
++_REF_UB = f"{_BASE}_P-21_R-21"  # union member B (shares memory with A)
++
++
++class TestUnionSuppressionIsOrderIndependent:
++    """The inactive overlay of a Union must render nothing regardless of node evaluation order.
++
++    The active overlay is the member REACHED in the discovery pass (frozen via
++    snapshot_discovered_active); the render pass suppresses the non-reached member no matter which
++    member's Choose runs first, so a freshly-activated member is not dropped because a sibling from
++    an inactive branch still carries a stale explicit value."""
++
++    def _members(self) -> tuple[ChooseWhenNode, ChooseWhenNode]:
++        member_a = ChooseWhenNode(
++            _REF_UA, {"1": [_ParamLeaf(_REF_UA)]}, None, union_sibling_refs={_REF_UB}
++        )
++        member_b = ChooseWhenNode(
++            _REF_UB, {"1": [_ParamLeaf(_REF_UB)]}, None, union_sibling_refs={_REF_UA}
++        )
++        return member_a, member_b
++
++    def test_inactive_member_suppressed_even_when_evaluated_first(self) -> None:
++        # A is the reached overlay; B is not. Evaluate B FIRST — still suppressed, because discovery
++        # already recorded A as reached.
++        state = GlobalState({_REF_UA: "1", _REF_UB: "1"})
++        state.mark_active_param(_REF_UA)  # only A reached in discovery
++        state.snapshot_discovered_active()
++        member_a, member_b = self._members()
++        ctx = EvalContext(state)
++        assert member_b.eval(ctx) == []  # suppressed by the discovery result, order-independent
++        assert _REF_UB not in state.active_param_refs()
++        member_a.eval(ctx)
++        assert _REF_UA in state.active_param_refs()
++
++
+ class TestComObjInstanceRefIds:
+     """`com_obj_instance_ref_ids()` exposes the device's instantiated com objects.
+ 
+diff --git a/packages/prod/tests/parser_v2/test_reinstantiate.py b/packages/prod/tests/parser_v2/test_reinstantiate.py
+index 07fa5cb..17d8ae4 100644
+--- a/packages/prod/tests/parser_v2/test_reinstantiate.py
++++ b/packages/prod/tests/parser_v2/test_reinstantiate.py
+@@ -93,6 +93,12 @@ class _Ctx:
+     def get(self, ref_id: str) -> str:
+         return self._values.get(ref_id, "")
+ 
++    def qualify(self, ref_id: str) -> str:
++        return ref_id  # global scope: identity (Choose/Repeat push the qualified gate id)
++
++    def qualify_local(self, ref_id: str) -> str:
++        return ref_id  # global scope: identity
++
+     def repeat_ctx(self, _i: int) -> "_Ctx":
+         return self  # same scope (carries the capture) for the synthetic test
+ 
+@@ -195,3 +201,47 @@ def test_repeat_records_gate_chain_for_count_param() -> None:
+     node.eval(_Ctx({"N": "2"}, cap))  # type: ignore[arg-type]
+     assert cap.controlled_ref_ids() == {"co-r"}
+     assert cap.chains["co-r"] == [frozenset({"N"}), frozenset({"N"})]  # two iterations
++
++
++def test_com_object_number_strips_only_terminal_ref() -> None:
++    """Canonicalize a com-object ref by dropping ONLY the terminal ``_R-<m>``, preserving any
++    module-instance path so distinct module instances stay distinct."""
++    from xknxeditor.prod.parser_v2.dynamic import _com_object_number
++
++    # top-level object: R- stripped -> O-<n>
++    assert _com_object_number("M-1_A-1_O-119_R-224") == "M-1_A-1_O-119"
++    # module-instanced object: MODULE PATH PRESERVED (not collapsed to O-2-23)
++    assert (
++        _com_object_number("MD-1_M-3_MI-1_O-2-23_R-1") == "MD-1_M-3_MI-1_O-2-23"
++    )
++    assert (
++        _com_object_number("MD-1_M-3_MI-2_O-2-23_R-1") == "MD-1_M-3_MI-2_O-2-23"
++    )
++    # two module instances of the same base object must NOT canonicalize equal
++    assert _com_object_number("MD-1_M-3_MI-1_O-2-23_R-1") != _com_object_number(
++        "MD-1_M-3_MI-2_O-2-23_R-1"
++    )
++    # no terminal R- -> unchanged
++    assert _com_object_number("MD-1_M-3_MI-1_O-2-23") == "MD-1_M-3_MI-1_O-2-23"
++
++
++class _QualCtx(_Ctx):
++    """A context whose qualify() prefixes a module-instance id, like ModuleState in a module scope."""
++
++    def qualify(self, ref_id: str) -> str:
++        return f"MOD_{ref_id}"
++
++    def qualify_local(self, ref_id: str) -> str:
++        return f"MOD_{ref_id}"  # module scope: a module-local gate gets the instance prefix
++
++
++def test_choose_pushes_qualified_gate_for_module_scope() -> None:
++    """Choose pushes the INSTANCE-QUALIFIED gate id so the chain matches the qualified ids that
++    active_param_refs() returns for module scopes (regression: module-gated objects in the active set)."""
++    node = ChooseWhenNode("P", {"1": [_CoLeaf("co")]}, None)
++    cap = EvalCapture(None)
++    node.eval(_QualCtx({"P": "1"}, cap))  # type: ignore[arg-type]
++    # gate recorded qualified, so the chain-AND matches only the qualified active set
++    assert cap.chains["co"] == [frozenset({"MOD_P"})]
++    assert cap.active_ref_ids(frozenset({"MOD_P"})) == {"co"}
++    assert cap.active_ref_ids(frozenset({"P"})) == set()  # unqualified would NOT match
