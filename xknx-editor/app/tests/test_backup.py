@@ -73,7 +73,7 @@ def test_backup_then_restore_on_a_fresh_addon(
     result = job["result"]
     archive = Path(result["path"])
     assert archive.parent == share / "xknx-editor-backups" and archive.suffix == ".zip"
-    assert result["counts"] == {"catalog": 1, "docs": 2, "settings": 1, "keys": 2, "logs": 1}  # docs = file + index
+    assert result["counts"] == {"catalog": 1, "docs": 2, "settings": 1, "keys": 2, "logs": 1, "telegrams": 0}  # docs = file + index
 
     manifest = read_manifest(archive)
     assert manifest["format"] == FORMAT and manifest["categories"] == list(CATEGORIES)
@@ -101,7 +101,7 @@ def test_backup_then_restore_on_a_fresh_addon(
     shutil.copy(archive, copied)
     job2 = wait_job(client2, client2.post("/api/backup/restore", json={"path": str(copied)}).json())
     assert job2["status"] == "done", job2
-    assert job2["result"]["counts"] == {"catalog": 1, "docs": 2, "settings": 1, "keys": 2, "logs": 1}
+    assert job2["result"]["counts"] == {"catalog": 1, "docs": 2, "settings": 1, "keys": 2, "logs": 1, "telegrams": 0}
 
     # Everything is back, seen through the second add-on's own API.
     assert client2.get("/api/catalog").json()["products"] == 1

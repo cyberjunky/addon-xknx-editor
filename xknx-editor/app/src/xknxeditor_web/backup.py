@@ -24,7 +24,9 @@ archive over a newer catalog.
 from __future__ import annotations
 
 import io
+import contextlib
 import json
+import tempfile
 import time
 import zipfile
 from pathlib import Path
@@ -36,7 +38,7 @@ if TYPE_CHECKING:
     from xknxeditor_web.editor import Editor
 
 FORMAT = 1
-CATEGORIES = ("catalog", "docs", "settings", "keys", "logs")
+CATEGORIES = ("catalog", "docs", "settings", "keys", "logs", "telegrams")
 DEFAULT_DIR = "xknx-editor-backups"
 
 KEY_FILES = ("signing_key.json", "ets_log_key.json")
@@ -120,6 +122,8 @@ def make_backup(editor: Editor, include: list[str] | None, dest: Path) -> dict[s
             counts["keys"] = n
         if "logs" in chosen:
             counts["logs"] = add_tree(z, config / "project_logs", "logs")
+        if "telegrams" in chosen:
+            counts["telegrams"] = _add_telegrams(z, editor, config)
         manifest = {
             "format": FORMAT,
             "created": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -206,5 +210,47 @@ def restore_backup(editor: Editor, path: Path, include: list[str] | None) -> dic
             SigningKeyStore(config).apply_saved()
         if "logs" in chosen:
             counts["logs"] = restore_tree("logs", config / "project_logs")
+        if "telegrams" in chosen and "telegrams/telegrams.db" in names:
+            counts["telegrams"] = _restore_telegrams(z, editor, config)
 
     return {"path": str(path), "created": manifest.get("created"), "categories": chosen, "counts": counts}
+
+
+def _add_telegrams(z: zipfile.ZipFile, editor: Editor, config: Path) -> int:
+    """A consistent copy of the recorded telegrams, taken through the live recorder when there
+    is one (the file alone may be mid-write). The count is telegrams, like restore's."""
+    import sqlite3
+
+    from xknxeditor_web.recorder import FILE_NAME
+
+    live = getattr(editor, "recorder", None)
+    src = config / FILE_NAME
+    if live is None and not src.is_file():
+        return 0
+    with tempfile.TemporaryDirectory() as tmp:
+        copy = Path(tmp) / FILE_NAME
+        if live is not None:
+            live.export_to(copy)
+        else:
+            with contextlib.closing(sqlite3.connect(src)) as a, contextlib.closing(sqlite3.connect(copy)) as b:
+                a.backup(b)
+        with contextlib.closing(sqlite3.connect(copy)) as c:
+            rows = int(c.execute("SELECT count(*) FROM telegrams").fetchone()[0])
+        z.write(copy, f"telegrams/{FILE_NAME}")
+    return rows
+
+
+def _restore_telegrams(z: zipfile.ZipFile, editor: Editor, config: Path) -> int:
+    from xknxeditor_web.recorder import FILE_NAME, TelegramRecorder
+
+    with tempfile.TemporaryDirectory() as tmp:
+        copy = Path(tmp) / FILE_NAME
+        copy.write_bytes(z.read(f"telegrams/{FILE_NAME}"))
+        live = getattr(editor, "recorder", None)
+        if live is not None:
+            return live.import_from(copy)
+        rec = TelegramRecorder(config)
+        try:
+            return rec.import_from(copy)
+        finally:
+            rec.close()

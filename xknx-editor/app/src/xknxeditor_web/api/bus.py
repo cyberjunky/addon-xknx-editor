@@ -1,15 +1,20 @@
-"""KNX bus: gateway discovery, connection settings, connect/disconnect, live telegrams."""
+"""KNX bus: gateway discovery, connection settings, connect/disconnect, live telegrams, and the
+recorded archive behind the Archive view, the charts and the statistics."""
 
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import Any
 
 from starlette.requests import Request
+from starlette.responses import StreamingResponse
 from starlette.routing import Route
 
 from xknxeditor_web.api import body, need, query_int, route
 from xknxeditor_web.bus import BusService
 from xknxeditor_web.errors import ApiError
+from xknxeditor_web.recorder import TelegramRecorder, parse_ga
 
 
 def _bus(request: Request) -> BusService:
@@ -89,6 +94,174 @@ async def telegrams(request: Request) -> Any:
 
 async def clear(request: Request) -> Any:
     _bus(request).clear()
+
+
+# --- recorded archive ---------------------------------------------------------------------------
+
+
+def _recorder(request: Request) -> TelegramRecorder:
+    rec = getattr(request.app.state, "recorder", None)
+    if rec is None:
+        raise ApiError("Telegram recording is not available", 503)
+    return rec
+
+
+def _query_float(request: Request, key: str) -> float | None:
+    raw = request.query_params.get(key)
+    if raw is None or raw == "":
+        return None
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ApiError(f"Query parameter '{key}' must be a number (seconds since the epoch)") from exc
+
+
+def _range(request: Request, default_seconds: float) -> tuple[float, float]:
+    until = _query_float(request, "to")
+    since = _query_float(request, "from")
+    if until is None:
+        until = time.time()
+    if since is None:
+        since = until - default_seconds
+    if since > until:
+        raise ApiError("'from' must be before 'to'")
+    return since, until
+
+
+async def _archive_filters(request: Request) -> dict[str, Any]:
+    """The query string as recorder filters; a name search is turned into the matching addresses."""
+    p = request.query_params
+    filters: dict[str, Any] = {
+        "since": _query_float(request, "from"),
+        "until": _query_float(request, "to"),
+        "source": p.get("source") or None,
+        "kind": p.get("kind") or None,
+        "q": (p.get("q") or "").strip() or None,
+    }
+    ga = (p.get("ga") or "").strip()
+    if ga.endswith("/"):
+        filters["ga_prefix"] = ga
+    elif ga:
+        value = parse_ga(ga)
+        if value is None:
+            raise ApiError(f"Not a group address: {ga}")
+        filters["ga"] = value
+    if filters["q"]:
+        needle = filters["q"].lower()
+        names = await _ga_names(request)
+        matches = [parse_ga(text) for text, (name, _dpt) in names.items() if needle in (name or "").lower()]
+        filters["ga_in"] = [m for m in matches if m is not None][:500]
+    dpt = (p.get("dpt") or "").strip()
+    if dpt:
+        names = await _ga_names(request)
+        matches = [parse_ga(text) for text, (_name, d) in names.items() if _dpt_matches(dpt, d)]
+        filters["ga_any"] = [m for m in matches if m is not None][:2000]
+    return filters
+
+
+def _dpt_short(dpt: str) -> str:
+    """``DPST-9-1`` → ``9.001``, ``DPT-9`` → ``9.xxx``."""
+    parts = dpt.split("-")
+    if parts[0] == "DPST" and len(parts) == 3:
+        return f"{parts[1]}.{int(parts[2]):03d}" if parts[2].isdigit() else dpt
+    if parts[0] == "DPT" and len(parts) == 2:
+        return f"{parts[1]}.xxx"
+    return dpt
+
+
+def _dpt_matches(wanted: str, dpt: str | None) -> bool:
+    """The same rule as the live monitor's DPT filter: ``9`` or ``9.`` is the main type, ``9.001``
+    (or ``DPST-9-1``) the exact sub-type."""
+    if not dpt:
+        return False
+    w = wanted.strip().lower()
+    short = _dpt_short(dpt).lower()
+    main = short.split(".")[0]
+    if w.startswith("dpst-") or w.startswith("dpt-"):
+        w = _dpt_short(w.upper()).lower()
+    if w.isdigit():
+        return main == w
+    if w.endswith(".") and w[:-1].isdigit():
+        return main == w[:-1]
+    m = w.split(".")
+    if len(m) == 2 and m[0].isdigit() and m[1].isdigit():
+        return short == f"{m[0]}.{int(m[1]):03d}"
+    return short.startswith(w)
+
+
+async def _with_names(request: Request, items: list[dict[str, Any]]) -> None:
+    names = await _ga_names(request)
+    for t in items:
+        info = names.get(t["destination"]) if t["destination_kind"] == "group" else None
+        t["destination_name"] = info[0] if info else ""
+        t["destination_dpt"] = info[1] if info else None
+
+
+async def archive(request: Request) -> Any:
+    rec = _recorder(request)
+    filters = await _archive_filters(request)
+    cursor = query_int(request, "cursor", 0) or None
+    limit = query_int(request, "limit", 200)
+    result = await asyncio.to_thread(rec.archive, cursor=cursor, limit=limit, **filters)
+    await _with_names(request, result["items"])
+    return result
+
+
+async def archive_csv(request: Request) -> Any:
+    rec = _recorder(request)
+    filters = await _archive_filters(request)
+    names = await _ga_names(request)
+    by_value = {v: name for text, (name, _dpt) in names.items() if (v := parse_ga(text)) is not None}
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    return StreamingResponse(
+        rec.csv_rows(by_value, **filters),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="telegrams-{stamp}.csv"'},
+    )
+
+
+async def archive_clear(request: Request) -> Any:
+    await asyncio.to_thread(_recorder(request).clear)
+    return _recorder(request).summary()
+
+
+async def archive_summary(request: Request) -> Any:
+    return await asyncio.to_thread(_recorder(request).summary)
+
+
+async def series(request: Request) -> Any:
+    rec = _recorder(request)
+    text = (request.query_params.get("ga") or "").strip()
+    ga = parse_ga(text) if text else None
+    if ga is None:
+        raise ApiError(f"Not a group address: {text or '(empty)'}")
+    since, until = _range(request, 24 * 3600)
+    points = query_int(request, "points", 600)
+    result = await asyncio.to_thread(rec.series, ga, since, until, points)
+    names = await _ga_names(request)
+    info = names.get(text)
+    result["destination"] = text
+    result["name"] = info[0] if info else ""
+    result["dpt"] = info[1] if info else None
+    return result
+
+
+async def stats(request: Request) -> Any:
+    rec = _recorder(request)
+    since, until = _range(request, 7 * 24 * 3600)
+    text = (request.query_params.get("ga") or "").strip()
+    ga = None
+    if text:
+        ga = parse_ga(text)
+        if ga is None:
+            raise ApiError(f"Not a group address: {text}")
+    result = await asyncio.to_thread(rec.stats, since, until, ga)
+    names = await _ga_names(request)
+    for row in result["top_addresses"]:
+        info = names.get(row["destination"])
+        row["name"] = info[0] if info else ""
+    result["availability"] = await asyncio.to_thread(rec.availability, since, until)
+    return result
 
 
 async def group_read(request: Request) -> Any:
@@ -188,6 +361,12 @@ def routes() -> list[Route]:
         route("/api/bus/programming-mode", programming_mode),
         route("/api/bus/telegrams", telegrams),
         route("/api/bus/telegrams/clear", clear, ["POST"]),
+        route("/api/bus/archive", archive),
+        route("/api/bus/archive.csv", archive_csv),
+        route("/api/bus/archive/summary", archive_summary),
+        route("/api/bus/archive/clear", archive_clear, ["POST"]),
+        route("/api/bus/series", series),
+        route("/api/bus/stats", stats),
         route("/api/bus/read", group_read, ["POST"]),
         route("/api/bus/write", group_write, ["POST"]),
     ]

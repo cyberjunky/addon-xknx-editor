@@ -58,6 +58,36 @@ The last open project is reopened when the add-on restarts.
   that extracts it on a Windows PC with ETS (`Knx.Ets.XmlSigning.dll`). Stored under
   `/config/signing_key.json` only.
 
+## Recording, archive, charts, statistics, network
+
+With a gateway configured and _Connect automatically when the add-on starts_ on, the add-on keeps
+its tunnel around the clock (a gateway that is down at boot is retried, a dropped link
+reconnects) and writes every telegram it sees to `/config/telegrams.db`. Recording is on by
+default; the settings button in the group monitor's Archive mode turns it off and sets the
+retention (30 days and 500 000 telegrams by default). The file is part of Home Assistant's
+backups of the add-on; the add-on's own backup dialog has a _Recorded telegrams_ category too,
+off by default.
+
+- **Group monitor → Live / Archive**: one filter bar for both. Free text matches names, values and
+  sources; the address field takes `1/2/` for a whole middle group or `1/2/3` for one address; the
+  DPT field takes `9` for every 9.xxx or `9.001` for one sub-type. Archive adds a time range, a
+  source address, group/individual, paging, a CSV export of the filtered result, and the
+  recording settings.
+- **Charts**: the recorded values of up to four group addresses (numbers and booleans) over a
+  range, as line, steps or area, with min / max / average / last per address. Ranges that end
+  now keep growing live. Open one from the chart button on a telegram, on a group address in the
+  editor, or in the statistics.
+- **Statistics**: totals, telegrams over time, activity by weekday and hour, the busiest group
+  addresses and devices, and the recorder's availability across the range: _recording_,
+  _link lost_ or _add-on not running_, plus stretches while recording in which the bus was quiet
+  for more than 30 minutes. A gap in the history is thereby explained rather than guessed.
+- **Network** (centre): devices and the group addresses they are linked to as a force-directed
+  graph; devices coloured by room, addresses by main group, an arrow on sending links. Live
+  telegrams travel along the links. Click a node for details and to open it in the editor.
+
+The MCP server exposes the same data as `monitor_archive`, `monitor_series` and
+`monitor_stats`.
+
 ## Options
 
 | Option         | Default | Meaning                                                                                                                                                                      |

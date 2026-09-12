@@ -1,8 +1,10 @@
 /** Lucide icons (ISC) rendered as inline SVG for Lit templates. */
 import { createElement, type IconNode } from "lucide";
 import {
+  Activity,
   Boxes,
   Building2,
+  ChartLine,
   ChevronDown,
   ChevronRight,
   Cloud,
@@ -27,7 +29,9 @@ import { html, type TemplateResult } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 
 const registry: Record<string, IconNode> = {
+  activity: Activity,
   boxes: Boxes,
+  chart: ChartLine,
   building: Building2,
   down: ChevronDown,
   right: ChevronRight,

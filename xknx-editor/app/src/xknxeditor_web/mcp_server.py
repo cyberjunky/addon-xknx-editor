@@ -9,13 +9,16 @@ offline on the project document and undoable; programming and monitor writes act
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from typing import TYPE_CHECKING, Any, Literal
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from xknxeditor_web.errors import ApiError
+from xknxeditor_web.recorder import parse_ga
 
 if TYPE_CHECKING:
     from starlette.applications import Starlette
@@ -518,6 +521,50 @@ def build(app: Starlette, token: str) -> tuple[Any, Any]:
         """Clear the telegram buffer."""
         bus().clear()
         return {"cleared": True}
+
+    def recorder() -> Any:
+        rec = getattr(app.state, "recorder", None)
+        if rec is None:
+            raise RuntimeError("Telegram recording is not available")
+        return rec
+
+    @tool()
+    async def monitor_archive(
+        hours: float = 24, ga: str = "", source: str = "", q: str = "", cursor: int = 0, limit: int = 200
+    ) -> dict[str, Any]:
+        """Recorded telegrams (round-the-clock archive on disk), newest first. `ga` is an exact group
+        address or a prefix ending in '/' (a middle group); `q` matches address, value, APCI or raw
+        text. Page with the returned next_cursor."""
+        filters: dict[str, Any] = {"since": time.time() - hours * 3600, "source": source or None, "q": q or None}
+        if ga.endswith("/"):
+            filters["ga_prefix"] = ga
+        elif ga:
+            value = parse_ga(ga)
+            if value is None:
+                raise RuntimeError(f"Not a group address: {ga}")
+            filters["ga"] = value
+        return await asyncio.to_thread(recorder().archive, cursor=cursor or None, limit=limit, **filters)
+
+    @tool()
+    async def monitor_series(ga: str, hours: float = 24, points: int = 200) -> dict[str, Any]:
+        """Numeric values of one group address over the last `hours` (booleans as 0/1), raw when
+        they fit in `points`, otherwise averaged per bucket as [time, avg, min, max]."""
+        value = parse_ga(ga)
+        if value is None:
+            raise RuntimeError(f"Not a group address: {ga}")
+        now = time.time()
+        return await asyncio.to_thread(recorder().series, value, now - hours * 3600, now, points)
+
+    @tool()
+    async def monitor_stats(hours: float = 24 * 7) -> dict[str, Any]:
+        """Bus statistics over the last `hours`: totals, telegrams over time, weekday × hour heatmap,
+        busiest addresses and sources, and an availability report (recording / link down / add-on
+        not running, plus quiet stretches)."""
+        now = time.time()
+        rec = recorder()
+        result = await asyncio.to_thread(rec.stats, now - hours * 3600, now)
+        result["availability"] = await asyncio.to_thread(rec.availability, now - hours * 3600, now)
+        return result
 
     @tool()
     async def monitor_send_read(address: str) -> dict[str, Any]:

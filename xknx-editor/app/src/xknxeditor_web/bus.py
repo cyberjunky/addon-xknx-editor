@@ -1,9 +1,11 @@
 """KNX bus connection: gateway settings, connect/disconnect, live telegram capture.
 
 Runs on the server's asyncio loop (xknx is asyncio-native); nothing here touches the project or
-catalog databases. Settings persist in ``<config>/settings.json``. The add-on never connects on
-its own at start-up: Home Assistant's KNX integration usually owns the gateway's tunnel, so the
-user decides when the editor takes one.
+catalog databases. Settings persist in ``<config>/settings.json``. The add-on connects at
+start-up only when ``auto_connect`` is on (Home Assistant's KNX integration usually owns the
+gateway's tunnel, so the user decides whether the editor takes one around the clock); with it on,
+a gateway that is down at boot is retried until it answers, and xknx reconnects by itself after a
+dropout. Every telegram also goes to the ``TelegramRecorder`` when recording is on.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from xknx.io.gateway_scanner import GatewayScanner
 from xknx.telegram import Telegram
 from xknx.telegram.address import GroupAddress, IndividualAddress
 
+from xknxeditor_web.recorder import TelegramRecorder
 from xknxeditor_web.worker import EditorWorker
 
 log = logging.getLogger(__name__)
@@ -44,6 +47,10 @@ class BusSettings:
     user_id: int | None = None
     local_ip: str = ""
     auto_connect: bool = False
+    # Round-the-clock recording to /config/telegrams.db (needs auto_connect to be useful).
+    record: bool = True
+    retain_days: int = 30
+    retain_rows: int = 500000
 
     def public(self) -> dict[str, Any]:
         d = asdict(self)
@@ -55,6 +62,7 @@ class BusSettings:
 class TelegramRecord:
     id: int
     time: str
+    ts: float
     direction: str
     source: str
     destination: str
@@ -65,6 +73,7 @@ class TelegramRecord:
     unit: str | None = None
     destination_name: str = ""
     destination_dpt: str | None = None
+    ga: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -80,9 +89,11 @@ class BusState:
 
 
 class BusService:
-    def __init__(self, config_dir: Path, worker: EditorWorker) -> None:
+    def __init__(self, config_dir: Path, worker: EditorWorker, recorder: TelegramRecorder | None = None) -> None:
         self._path = config_dir / "settings.json"
         self._worker = worker
+        self.recorder = recorder
+        self._auto_task: asyncio.Task[None] | None = None
         self.settings = self._load()
         self.state = BusState()
         self._xknx: XKNX | None = None
@@ -93,6 +104,7 @@ class BusService:
         self.name_map: dict[int, str] = {}
         self.decoding: dict[str, Any] = {"project": False, "addresses": 0, "with_dpt": 0, "from_objects": 0}
         self.dpt_source: Callable[[], Awaitable[dict[str, Any]]] | None = None
+        self._apply_recording()
 
     # --- settings -----------------------------------------------------------
 
@@ -123,10 +135,18 @@ class BusService:
                 continue
             setattr(self.settings, key, value)
         self.save()
+        self._apply_recording()
         if self._xknx is None and self.state.error:
             self.state.error = None  # stale failure from the old settings
             self._emit_state()
         return self.settings
+
+    def _apply_recording(self) -> None:
+        if self.recorder is None:
+            return
+        self.recorder.enabled = bool(self.settings.record)
+        self.recorder.retain_days = max(0, int(self.settings.retain_days))
+        self.recorder.retain_rows = max(0, int(self.settings.retain_rows))
 
     # --- status -------------------------------------------------------------
 
@@ -135,6 +155,8 @@ class BusService:
         s["telegrams"] = len(self._records)
         s["settings"] = self.settings.public()
         s["decoding"] = dict(self.decoding)
+        s["recording"] = self.recorder.enabled if self.recorder is not None else False
+        s["retrying"] = self._auto_task is not None and not self._auto_task.done()
         return s
 
     # --- connect / disconnect -------------------------------------------------
@@ -256,15 +278,39 @@ class BusService:
                 gateway=_gateway_dict(gw) if gw else {"ip": self.settings.gateway_ip, "name": self.settings.gateway_name},
             )
             xknx.connection_manager.register_connection_state_changed_cb(self._on_state)
+            self._record_event("connected")
             self._emit_state()
             log.info("bus connected via %s", self.settings.connection_type)
             return self.status()
 
+    def keep_connected(self) -> None:
+        """Auto-connect: try until the gateway answers, backing off from 5 s to 2 min. A user
+        disconnect stops the attempts; xknx handles reconnects after a dropout on its own."""
+        if self._auto_task is not None and not self._auto_task.done():
+            return
+        self._auto_task = asyncio.get_running_loop().create_task(self._retry_connect())
+
+    async def _retry_connect(self) -> None:
+        delay = 5
+        try:
+            while self.settings.auto_connect and self._xknx is None:
+                result = await self.connect()
+                if result["state"] == "CONNECTED":
+                    return
+                log.info("auto-connect failed (%s); next try in %d s", result.get("error"), delay)
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 120)
+        except asyncio.CancelledError:
+            pass
+
     async def disconnect(self) -> dict[str, Any]:
+        if self._auto_task is not None and not self._auto_task.done():
+            self._auto_task.cancel()
         async with self._lock:
             xknx, self._xknx = self._xknx, None
             if xknx is not None:
                 await _stop_quietly(xknx)
+                self._record_event("disconnected")
                 log.info("bus disconnected")
             self.state = BusState()
             self._emit_state()
@@ -343,9 +389,11 @@ class BusService:
                 value = str(value)
         dest = telegram.destination_address
         ga_value = dest.raw if isinstance(dest, GroupAddress) else None
+        now = time.time()
         record = TelegramRecord(
             id=self._seq,
-            time=time.strftime("%H:%M:%S"),
+            time=time.strftime("%H:%M:%S", time.localtime(now)),
+            ts=now,
             direction=str(getattr(telegram.direction, "value", telegram.direction)),
             source=str(telegram.source_address),
             destination=str(dest),
@@ -356,10 +404,14 @@ class BusService:
             unit=unit,
             destination_name=self.name_map.get(ga_value, "") if ga_value is not None else "",
             destination_dpt=self.dpt_map.get(ga_value) if ga_value is not None else None,
+            ga=ga_value,
         )
         self._records.append(record)
         self.state.telegrams = len(self._records)
-        self._worker.emit({"type": "telegram", "telegram": record.to_dict()})
+        data = record.to_dict()
+        if self.recorder is not None:
+            self.recorder.add(data)
+        self._worker.emit({"type": "telegram", "telegram": data})
 
     def telegrams(self, since: int = 0, limit: int = 500) -> list[dict[str, Any]]:
         return [r.to_dict() for r in self._records if r.id > since][-limit:]
@@ -394,10 +446,24 @@ class BusService:
     async def _on_state(self, state: Any) -> None:
         name = getattr(state, "value", str(state))
         if self._xknx is not None:
+            was = self.state.state
             self.state.state = name
             if name == "DISCONNECTED":
                 self.state.error = self.state.error or "Connection lost"
+                if was == "CONNECTED":
+                    self._record_event("disconnected")
+            elif name == "CONNECTED":
+                self.state.error = None
+                if was != "CONNECTED":
+                    self._record_event("connected")
             self._emit_state()
+
+    def _record_event(self, kind: str) -> None:
+        if self.recorder is not None:
+            try:
+                self.recorder.event(kind)
+            except Exception:  # noqa: BLE001 - the event log is advisory
+                log.debug("recorder event %s failed", kind, exc_info=True)
 
     def _emit_state(self) -> None:
         self._worker.emit({"type": "bus", "bus": self.status()})

@@ -32,6 +32,7 @@ const CENTER: { id: CenterTab; label: string }[] = [
   { id: "secure", label: "Secure" },
   { id: "docs", label: "Documents" },
   { id: "ai", label: "AI" },
+  { id: "network", label: "Network" },
 ];
 const RIGHT: { id: RightTab; label: string }[] = [
   { id: "history", label: "History" },
@@ -45,10 +46,13 @@ const BACKUP_CATEGORIES: { id: string; label: string }[] = [
   { id: "settings", label: "Gateway settings" },
   { id: "keys", label: "Keys" },
   { id: "logs", label: "Project logs" },
+  { id: "telegrams", label: "Recorded telegrams" },
 ];
 
 const BOTTOM: { id: BottomTab; label: string }[] = [
   { id: "monitor", label: "Group monitor" },
+  { id: "charts", label: "Charts" },
+  { id: "stats", label: "Statistics" },
   { id: "catalog", label: "Catalog" },
 ];
 
@@ -592,9 +596,7 @@ export class AppShell extends LitElement {
                 (t) => store.setBottom(t),
                 () => store.toggleBottom(),
               )}
-              <div class="body">
-                ${store.bottom === "catalog" ? html`<xknx-catalog-view style="height:100%;overflow:auto"></xknx-catalog-view>` : html`<xknx-monitor-view style="height:100%"></xknx-monitor-view>`}
-              </div>
+              <div class="body">${this.renderBottom()}</div>
             </div>
           </sl-split-panel>
           <div slot="end" class="pane right" ?hidden=${!store.rightOpen}>
@@ -663,6 +665,27 @@ export class AppShell extends LitElement {
         return html`<xknx-docs-view></xknx-docs-view>`;
       case "ai":
         return html`<xknx-ai-view></xknx-ai-view>`;
+      case "network":
+        return html`<xknx-network-view></xknx-network-view>`;
+    }
+  }
+
+  private renderBottom() {
+    switch (store.bottom) {
+      case "catalog":
+        return html`<xknx-catalog-view
+          style="height:100%;overflow:auto"
+        ></xknx-catalog-view>`;
+      case "charts":
+        return html`<xknx-charts-view style="height:100%"></xknx-charts-view>`;
+      case "stats":
+        return html`<xknx-stats-view
+          style="height:100%;overflow:auto"
+        ></xknx-stats-view>`;
+      default:
+        return html`<xknx-monitor-view
+          style="height:100%"
+        ></xknx-monitor-view>`;
     }
   }
 
@@ -800,7 +823,9 @@ export class AppShell extends LitElement {
         <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px">
           ${BACKUP_CATEGORIES.map(
             (c) =>
-              html`<sl-checkbox id=${`backup-${c.id}`} checked
+              html`<sl-checkbox
+                id=${`backup-${c.id}`}
+                ?checked=${c.id !== "telegrams"}
                 >${tr(c.label)}</sl-checkbox
               >`,
           )}
@@ -862,7 +887,9 @@ export class AppShell extends LitElement {
         <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px">
           ${BACKUP_CATEGORIES.map(
             (c) =>
-              html`<sl-checkbox id=${`restore-${c.id}`} checked
+              html`<sl-checkbox
+                id=${`restore-${c.id}`}
+                ?checked=${c.id !== "telegrams"}
                 >${tr(c.label)}</sl-checkbox
               >`,
           )}

@@ -236,6 +236,12 @@ async def decrypt_traces(request: Request) -> Any:
     return await ed.worker.run(ed.decrypt_traces, str(data.get("password") or ""), keyring, signing)
 
 
+async def network(request: Request) -> Any:
+    """Devices ↔ group addresses graph for the Network view."""
+    ed = request.app.state.editor
+    return await ed.worker.run(ed.network)
+
+
 def routes() -> list[Route]:
     return [
         route("/api/project", info),
@@ -256,6 +262,7 @@ def routes() -> list[Route]:
         route("/api/project/import", import_project, ["POST"]),
         route("/api/project/topology", topology),
         route("/api/project/devices", devices),
+        route("/api/project/network", network),
         route("/api/project/undo", undo, ["POST"]),
         route("/api/project/redo", redo, ["POST"]),
         route("/api/project/history", history),

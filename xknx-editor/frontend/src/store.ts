@@ -11,9 +11,10 @@ export type CenterTab =
   | "recover"
   | "secure"
   | "docs"
-  | "ai";
+  | "ai"
+  | "network";
 export type RightTab = "history" | "project" | "health";
-export type BottomTab = "monitor" | "catalog";
+export type BottomTab = "monitor" | "charts" | "stats" | "catalog";
 export type Gateway = {
   name: string;
   ip: string;
@@ -31,6 +32,10 @@ export type BusStatus = {
   connected_since: string | null;
   gateway: Gateway | null;
   telegrams: number;
+  /** Round-the-clock recording to /config/telegrams.db is on. */
+  recording: boolean;
+  /** Auto-connect is still trying to reach the gateway. */
+  retrying: boolean;
   decoding?: {
     project: boolean;
     addresses: number;
@@ -49,11 +54,18 @@ export type BusStatus = {
     user_id: number | null;
     local_ip: string;
     auto_connect: boolean;
+    record: boolean;
+    retain_days: number;
+    retain_rows: number;
   };
 };
 export type TelegramRecord = {
   id: number;
   time: string;
+  /** Seconds since the epoch. */
+  ts: number;
+  /** Raw group address value when the destination is a group address. */
+  ga?: number | null;
   direction: string;
   source: string;
   destination: string;
@@ -71,6 +83,8 @@ const EMPTY_BUS: BusStatus = {
   connected_since: null,
   gateway: null,
   telegrams: 0,
+  recording: false,
+  retrying: false,
   settings: {
     connection_type: "auto",
     gateway_ip: "",
@@ -83,6 +97,9 @@ const EMPTY_BUS: BusStatus = {
     user_id: null,
     local_ip: "",
     auto_connect: false,
+    record: true,
+    retain_days: 30,
+    retain_rows: 500000,
   },
 };
 
@@ -98,6 +115,9 @@ class Store {
   /** Saved search the device overview is showing, from the Buildings dock. Durable rather than
    * one-shot: the overview may already be mounted, in which case nothing would consume it. */
   overviewIssue: "download" | "unassigned" | null = null;
+  /** A group address someone asked to see charted (monitor row, GA editor, statistics). Durable
+   * for the same reason as `overviewIssue`: the Charts view may or may not be mounted yet. */
+  chartRequest: { ga: string; name: string } | null = null;
   left: LeftTab = "topology";
   center: CenterTab = "editor";
   right: RightTab = "project";
@@ -182,6 +202,12 @@ class Store {
     this.bottom = tab;
     this.bottomOpen = true;
     this.persist();
+  }
+
+  /** Show a group address in the Charts dock. */
+  requestChart(ga: string, name = ""): void {
+    this.chartRequest = { ga, name };
+    this.setBottom("charts");
   }
 
   toggleBottom(): void {

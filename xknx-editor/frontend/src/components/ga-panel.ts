@@ -138,7 +138,16 @@ export class GaPanel extends LitElement {
         ${tr("This group address no longer exists.")}
       </div>`;
     return html`
-      <h3>${d.text}</h3>
+      <h3>
+        ${d.text}
+        <sl-button
+          size="small"
+          style="margin-left:8px;font-family:var(--sl-font-sans)"
+          title=${tr("Show the recorded values of this address")}
+          @click=${() => store.requestChart(d.text, d.name)}
+          >${icon("chart", 14)} ${tr("Chart")}</sl-button
+        >
+      </h3>
       <div class="grid">
         <sl-input
           size="small"

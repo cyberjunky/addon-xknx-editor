@@ -41,5 +41,7 @@ def installed_licences() -> dict[str, Any]:
             {"name": "@shoelace-style/shoelace", "licence": "MIT"},
             {"name": "lucide", "licence": "ISC"},
             {"name": "@floating-ui/dom (via Shoelace)", "licence": "MIT"},
+            {"name": "uplot", "licence": "MIT"},
+            {"name": "force-graph (with d3-force, d3-zoom, d3-drag, d3-scale: ISC)", "licence": "MIT"},
         ],
     }

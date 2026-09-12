@@ -13,8 +13,10 @@
   "dependencies": {
     "@lit-labs/virtualizer": "^2.1.1",
     "@shoelace-style/shoelace": "^2.20.1",
+    "force-graph": "^1.51.4",
     "lit": "^3.3.3",
-    "lucide": "^1.41.0"
+    "lucide": "^1.41.0",
+    "uplot": "^1.6.32"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

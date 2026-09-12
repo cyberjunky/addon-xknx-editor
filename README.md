@@ -32,7 +32,7 @@ folder on the `/addons` share.
   again, with the manufacturer data bundled from the catalog.
 - Docked layout: buildings, topology, group addresses, devices and catalog on the left; editor,
   device overview, mass linker and tools in the centre; history, project and health on the right;
-  group monitor, logs and status at the bottom. Undo/redo for every edit.
+  group monitor, charts, statistics and catalog at the bottom. Undo/redo for every edit.
 - Device editor with the parameter pages of the application program, the group objects table
   (C R W T U flags), preflight ("test before programming"), full/partial download, memory preview,
   read, restart, PDF manual.
@@ -40,6 +40,15 @@ folder on the `/addons` share.
   data of this unresolved device".
 - Gateway scan, tunnelling (plain, TCP, IP Secure with keyring), routing; group monitor with
   decoded values; read and write telegrams.
+- Round-the-clock recording: every telegram goes to a SQLite archive under `/config`, so what
+  happened on the bus at three in the morning can be looked up later. Archive view with filters
+  (text, address or middle group, DPT, source), CSV export, retention by age and count.
+- Charts of any group address's recorded values (up to four at once, live-updating), and
+  statistics: telegrams over time, a weekday × hour activity heatmap, the busiest addresses and
+  devices, and an availability report that explains every gap (quiet bus, link lost, add-on
+  not running).
+- Network view: devices and group addresses as a force-directed graph, pulsing with live
+  traffic.
 - Tools: extended copy, replace device, shift addresses, labels, topology check; mass linker.
 - Recover a project from the bus (scan, identify, read back, verify, write into a project);
   assign individual addresses to devices in programming mode or by serial number.

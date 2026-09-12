@@ -871,6 +871,58 @@ class Editor:
                         break
         return {"names": names, "dpts": dpts, "addresses": len(gas), "with_dpt": len(dpts), "from_objects": borrowed}
 
+    def network(self) -> dict[str, Any]:
+        """Devices and group addresses as a graph: one node per device (with its room) and per
+        linked group address, one edge per link. Unlinked addresses are left out; they would only
+        float. Feeds the Network view."""
+        pid = self._pid()
+        devices = self.projects.devices(pid)
+        co_owner: dict[int, int] = {}
+        for d in devices:
+            for co in d.com_objects:
+                co_owner[co.id] = d.id
+        links: list[dict[str, Any]] = []
+        used: set[int] = set()
+        gas = self.projects.group_addresses(pid)
+        for g in gas:
+            for ln in self.projects.group_address_links(pid, g.id):
+                device_id = co_owner.get(ln.com_object_id)
+                if device_id is None:
+                    continue
+                links.append({"device": device_id, "ga": g.id, "sending": bool(ln.is_sending)})
+                used.add(g.id)
+        nodes = [
+            {
+                "kind": "device",
+                "id": f"d{d.id}",
+                "device_id": d.id,
+                "name": d.name or d.product_name or "",
+                "address": self.projects.individual_address(pid, d.id),
+                "room": self._space_name(d.space_id),
+                "product": d.product_name,
+            }
+            for d in devices
+        ] + [
+            {
+                "kind": "ga",
+                "id": f"g{g.id}",
+                "ga_id": g.id,
+                "ga": g.address,
+                "address": g.text,
+                "name": g.name,
+                "dpt": g.datapoint_type,
+            }
+            for g in gas
+            if g.id in used
+        ]
+        return {
+            "nodes": nodes,
+            "links": [{"source": f"d{ln['device']}", "target": f"g{ln['ga']}", "sending": ln["sending"]} for ln in links],
+            "devices": len(devices),
+            "addresses": len(used),
+            "unlinked": len(gas) - len(used),
+        }
+
     def group_ranges(self, installation: int = 0) -> dict[str, Any]:
         pid = self._pid()
         return {

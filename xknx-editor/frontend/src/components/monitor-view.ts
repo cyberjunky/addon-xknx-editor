@@ -6,14 +6,101 @@ import { store, type TelegramRecord } from "../store.js";
 import { t as tr } from "../i18n.js";
 
 /** "DPST-13-10" → "13.010", "DPT-1" → "1.xxx". */
-function dptShort(dpt: string): string {
+export function dptShort(dpt: string): string {
   const m = /^DPST-(\d+)-(\d+)$/.exec(dpt);
   if (m) return `${m[1]}.${m[2].padStart(3, "0")}`;
   const n = /^DPT-(\d+)$/.exec(dpt);
   return n ? `${n[1]}.xxx` : dpt;
 }
 
-/** Bottom-dock group monitor: live telegrams with decoded values, filter, read/write bar. */
+/** The DPT filter: "9" or "9." is the main type, "9.001" (or "DPST-9-1") the exact sub-type. */
+export function dptMatches(
+  filter: string,
+  dpt: string | null | undefined,
+): boolean {
+  let f = filter.trim().toLowerCase();
+  if (!f) return true;
+  if (!dpt) return false;
+  const short = dptShort(dpt).toLowerCase();
+  const main = short.split(".")[0];
+  if (f.startsWith("dpst-") || f.startsWith("dpt-"))
+    f = dptShort(f.toUpperCase()).toLowerCase();
+  if (/^\d+$/.test(f)) return main === f;
+  if (/^\d+\.$/.test(f)) return main === f.slice(0, -1);
+  const parts = /^(\d+)\.(\d+)$/.exec(f);
+  if (parts) return short === `${parts[1]}.${parts[2].padStart(3, "0")}`;
+  return short.startsWith(f);
+}
+
+/** The address filter: "1/2/" is a prefix (a middle group), "1/2/3" an exact address. */
+export function addressMatches(filter: string, destination: string): boolean {
+  const f = filter.trim();
+  if (!f) return true;
+  return f.endsWith("/") ? destination.startsWith(f) : destination === f;
+}
+
+type ArchiveItem = TelegramRecord & { ts: number; num: number | null };
+type Summary = {
+  enabled: boolean;
+  rows: number;
+  oldest: number | null;
+  newest: number | null;
+  bytes: number;
+  retain_days: number;
+  retain_rows: number;
+};
+type Preset = { id: string; label: string; seconds: number };
+export const PRESETS: Preset[] = [
+  { id: "1h", label: "Last hour", seconds: 3600 },
+  { id: "6h", label: "Last 6 hours", seconds: 6 * 3600 },
+  { id: "24h", label: "Last 24 hours", seconds: 24 * 3600 },
+  { id: "7d", label: "Last 7 days", seconds: 7 * 24 * 3600 },
+  { id: "30d", label: "Last 30 days", seconds: 30 * 24 * 3600 },
+  { id: "custom", label: "Custom range", seconds: 0 },
+];
+
+/** `datetime-local` value for a timestamp, in the browser's zone. */
+export function localInput(ts: number): string {
+  const d = new Date(ts * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** The range a preset (or a custom pair of `datetime-local` values) stands for, in seconds. */
+export function presetRange(
+  preset: string,
+  customFrom: string,
+  customTo: string,
+): { from: number; to: number } {
+  const p = PRESETS.find((x) => x.id === preset) ?? PRESETS[2];
+  if (p.seconds) {
+    const to = Date.now() / 1000;
+    return { from: to - p.seconds, to };
+  }
+  const from = new Date(customFrom).getTime() / 1000;
+  const to = new Date(customTo).getTime() / 1000;
+  return {
+    from: Number.isFinite(from) ? from : 0,
+    to: Number.isFinite(to) ? to : Date.now() / 1000,
+  };
+}
+
+export function formatBytes(n: number): string {
+  if (n >= 1024 * 1024 * 1024)
+    return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${Math.round(n / 1024)} kB`;
+}
+
+/** A telegram whose value can be charted: numbers and booleans on a group address. */
+function chartable(t: TelegramRecord | ArchiveItem): boolean {
+  if (t.destination_kind !== "group") return false;
+  if ("num" in t) return t.num !== null; // archive rows carry the value as text plus `num`
+  return typeof t.value === "number" || typeof t.value === "boolean";
+}
+
+/** Bottom-dock group monitor: live telegrams, and the recorded archive behind them, with one
+ * filter bar (text, address, DPT) for both. */
 @customElement("xknx-monitor-view")
 export class MonitorView extends LitElement {
   static styles = css`
@@ -38,8 +125,11 @@ export class MonitorView extends LitElement {
     }
     .toolbar sl-input.filter {
       flex: 1;
-      min-width: 160px;
-      max-width: 320px;
+      min-width: 140px;
+      max-width: 260px;
+    }
+    .toolbar sl-input.narrow {
+      width: 100px;
     }
     .list {
       overflow: auto;
@@ -63,6 +153,14 @@ export class MonitorView extends LitElement {
       font-weight: 500;
       font-size: 12px;
     }
+    td.act {
+      padding: 0 4px;
+      width: 24px;
+    }
+    td.act sl-button::part(base) {
+      min-height: 22px;
+      height: 22px;
+    }
     .addr {
       font-family: ui-monospace, Menlo, Consolas, monospace;
       font-size: 12px;
@@ -77,19 +175,56 @@ export class MonitorView extends LitElement {
       padding: 16px;
       color: var(--ha-text-2);
     }
+    .more {
+      padding: 8px;
+      text-align: center;
+    }
+    .form {
+      display: grid;
+      gap: 12px;
+    }
+    .form .two {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .hint {
+      color: var(--ha-text-2);
+      font-size: 12px;
+      line-height: 1.4;
+    }
   `;
 
+  @state() private mode: "live" | "archive" = "live";
+  // The shared filter: free text (name parts, values), an address or address prefix, a DPT.
   @state() private filter = "";
-  // The monitor records only while it is running, and it starts stopped and empty: neither opening
-  // a project nor reloading the page should present traffic nobody asked to record. `frozen` is the
-  // list as it stood when Stop was pressed; telegrams keep arriving in the background either way,
-  // and `sinceId` is the last one that already existed when Start was pressed, so a run shows only
-  // what happened during it. Ids come from the backend and only ever increase.
+  @state() private address = "";
+  @state() private dpt = "";
+  // Live: the monitor records only while it is running, and it starts stopped and empty: neither
+  // opening a project nor reloading the page should present traffic nobody asked to record.
+  // `frozen` is the list as it stood when Stop was pressed; telegrams keep arriving in the
+  // background either way, and `sinceId` is the last one that already existed when Start was
+  // pressed, so a run shows only what happened during it. Ids come from the backend and only
+  // ever increase.
   @state() private running = false;
   @state() private frozen: TelegramRecord[] | null = [];
   private sinceId = 0;
+  // Archive: the recorded telegrams, newest first, paged with a cursor.
+  @state() private preset = "24h";
+  @state() private customFrom = localInput(Date.now() / 1000 - 3600);
+  @state() private customTo = localInput(Date.now() / 1000);
+  @state() private source = "";
+  @state() private kind = "";
+  @state() private items: ArchiveItem[] = [];
+  @state() private total = 0;
+  @state() private nextCursor: number | null = null;
+  @state() private loading = false;
+  @state() private summary: Summary | null = null;
+  @state() private settingsOpen = false;
+  @state() private busy = false;
   private unsubscribe = () => {};
   private lastProject = "";
+  private debounce: number | undefined;
 
   connectedCallback(): void {
     super.connectedCallback();
@@ -99,6 +234,7 @@ export class MonitorView extends LitElement {
     });
     // Deliberately no backlog fetch: a restart starts clean.
     if (!this.running) this.stop();
+    void this.loadSummary();
   }
 
   disconnectedCallback(): void {
@@ -115,7 +251,7 @@ export class MonitorView extends LitElement {
     this.stop();
   }
 
-  /** The telegrams the table shows: this run's while running, the frozen snapshot while stopped. */
+  /** The telegrams the live table shows: this run's while running, the frozen snapshot while stopped. */
   private recorded(): TelegramRecord[] {
     if (!this.running) return this.frozen ?? [];
     return store.telegrams.filter((t) => t.id > this.sinceId);
@@ -139,18 +275,125 @@ export class MonitorView extends LitElement {
   }
 
   updated(): void {
-    if (!this.running) return;
+    if (this.mode !== "live" || !this.running) return;
     const list = this.renderRoot.querySelector(".list") as HTMLElement | null;
     if (list) list.scrollTop = list.scrollHeight;
   }
 
+  private passes(t: TelegramRecord, q: string): boolean {
+    if (!addressMatches(this.address, t.destination)) return false;
+    if (this.dpt && !dptMatches(this.dpt, t.destination_dpt)) return false;
+    return (
+      !q ||
+      `${t.source} ${t.destination} ${t.destination_name ?? ""} ${t.apci} ${t.value ?? ""} ${t.raw}`
+        .toLowerCase()
+        .includes(q)
+    );
+  }
+
+  // --- archive -------------------------------------------------------------------------------
+
+  private params(): URLSearchParams {
+    const { from, to } = presetRange(
+      this.preset,
+      this.customFrom,
+      this.customTo,
+    );
+    const p = new URLSearchParams({ from: String(from), to: String(to) });
+    if (this.address.trim()) p.set("ga", this.address.trim());
+    if (this.filter.trim()) p.set("q", this.filter.trim());
+    if (this.dpt.trim()) p.set("dpt", this.dpt.trim());
+    if (this.source.trim()) p.set("source", this.source.trim());
+    if (this.kind) p.set("kind", this.kind);
+    return p;
+  }
+
+  private async loadArchive(more = false): Promise<void> {
+    if (this.loading) return;
+    this.loading = true;
+    try {
+      const p = this.params();
+      p.set("limit", "200");
+      if (more && this.nextCursor) p.set("cursor", String(this.nextCursor));
+      const r = await api.get<{
+        items: ArchiveItem[];
+        total: number;
+        next_cursor: number | null;
+      }>(`api/bus/archive?${p}`);
+      this.items = more ? [...this.items, ...r.items] : r.items;
+      this.total = r.total;
+      this.nextCursor = r.next_cursor;
+    } catch (e) {
+      store.say(e instanceof ApiError ? e.message : String(e), "danger");
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  private scheduleArchive(): void {
+    if (this.mode !== "archive") return;
+    clearTimeout(this.debounce);
+    this.debounce = window.setTimeout(() => void this.loadArchive(), 300);
+  }
+
+  private async loadSummary(): Promise<void> {
+    try {
+      this.summary = await api.get<Summary>("api/bus/archive/summary");
+    } catch {
+      this.summary = null;
+    }
+  }
+
+  private setMode(mode: "live" | "archive"): void {
+    this.mode = mode;
+    if (mode === "archive") {
+      void this.loadArchive();
+      void this.loadSummary();
+    }
+  }
+
+  private async clearArchive(): Promise<void> {
+    if (!confirm(tr("Delete every recorded telegram? This cannot be undone.")))
+      return;
+    try {
+      this.summary = await api.post<Summary>("api/bus/archive/clear", {});
+      this.items = [];
+      this.total = 0;
+      this.nextCursor = null;
+      store.say(tr("Archive cleared"), "success");
+    } catch (e) {
+      store.say(e instanceof ApiError ? e.message : String(e), "danger");
+    }
+  }
+
+  private value(id: string): string {
+    return (
+      this.renderRoot.querySelector(`#${id}`) as HTMLInputElement
+    ).value.trim();
+  }
+
+  private async saveRecording(): Promise<void> {
+    this.busy = true;
+    try {
+      await api.post("api/bus/settings", {
+        record: (this.renderRoot.querySelector("#rec-on") as HTMLInputElement)
+          .checked,
+        retain_days: Number(this.value("rec-days")) || 0,
+        retain_rows: Number(this.value("rec-rows")) || 0,
+      });
+      store.say(tr("Recording settings saved"), "success");
+      this.settingsOpen = false;
+      void this.loadSummary();
+    } catch (e) {
+      store.say(e instanceof ApiError ? e.message : String(e), "danger");
+    } finally {
+      this.busy = false;
+    }
+  }
+
   private async send(kind: "read" | "write"): Promise<void> {
-    const address = (
-      this.renderRoot.querySelector("#ga") as HTMLInputElement
-    ).value.trim();
-    const raw = (
-      this.renderRoot.querySelector("#raw") as HTMLInputElement
-    ).value.trim();
+    const address = this.value("ga");
+    const raw = this.value("raw");
     try {
       if (kind === "read") await api.post("api/bus/read", { address });
       else
@@ -163,27 +406,150 @@ export class MonitorView extends LitElement {
     }
   }
 
+  // --- rendering ------------------------------------------------------------------------------
+
+  private renderValue(t: TelegramRecord, projectOpen: boolean) {
+    if (t.value !== null && t.value !== undefined)
+      return html`${String(t.value)}${t.unit ? html` <span class="muted">${t.unit}</span>` : nothing}`;
+    if (t.destination_kind === "group" && projectOpen && !t.destination_dpt)
+      return html`<span
+        class="muted"
+        title=${tr("This group address has no datapoint type in the project")}
+        >${tr("no DPT")}</span
+      >`;
+    return "";
+  }
+
+  private renderRows(items: TelegramRecord[], withDate: boolean) {
+    const projectOpen = !!store.bus.decoding?.project;
+    return html`<table>
+      <tr>
+        <th>${tr("Time")}</th>
+        <th>${tr("Source")}</th>
+        <th>${tr("Destination")}</th>
+        <th>${tr("Name")}</th>
+        <th>APCI</th>
+        <th>${tr("Value")}</th>
+        <th>DPT</th>
+        <th>${tr("Raw")}</th>
+        <th></th>
+      </tr>
+      ${items.map(
+        (t) =>
+          html`<tr>
+            <td class="muted">${withDate ? t.time : t.time.slice(-8)}</td>
+            <td class="addr">${t.source}</td>
+            <td class="addr">${t.destination}</td>
+            <td>${t.destination_name ?? ""}</td>
+            <td class="apci">${t.apci}</td>
+            <td>${this.renderValue(t, projectOpen)}</td>
+            <td class="muted">
+              ${t.destination_dpt ? dptShort(t.destination_dpt) : ""}
+            </td>
+            <td class="addr muted">${t.raw}</td>
+            <td class="act">
+              ${chartable(t) ? html`<sl-button size="small" variant="text" title=${tr("Chart this address")} @click=${() => store.requestChart(t.destination, t.destination_name ?? "")}>${icon("chart", 14)}</sl-button>` : nothing}
+            </td>
+          </tr>`,
+      )}
+    </table>`;
+  }
+
+  private renderRecordingDialog() {
+    const s = store.bus.settings;
+    const sum = this.summary;
+    const when = (ts: number | null) =>
+      ts ? new Date(ts * 1000).toLocaleString() : "–";
+    return html`<sl-dialog
+      label=${tr("Recording")}
+      ?open=${this.settingsOpen}
+      @sl-after-hide=${() => (this.settingsOpen = false)}
+      style="--width: 520px"
+    >
+      <div class="form">
+        <p class="hint" style="margin:0">
+          ${tr("Every telegram the connection sees is written to /config/telegrams.db, whether the live monitor is running or not. The Archive, the Charts and the Statistics read from it.")}
+        </p>
+        <sl-switch id="rec-on" ?checked=${s.record}
+          >${tr("Record telegrams")}</sl-switch
+        >
+        <div class="two">
+          <sl-input
+            id="rec-days"
+            type="number"
+            min="0"
+            size="small"
+            label=${tr("Keep for (days, 0 = no limit)")}
+            value=${String(s.retain_days)}
+          ></sl-input>
+          <sl-input
+            id="rec-rows"
+            type="number"
+            min="0"
+            size="small"
+            label=${tr("Keep at most (telegrams, 0 = no limit)")}
+            value=${String(s.retain_rows)}
+          ></sl-input>
+        </div>
+        ${sum ? html`<div class="hint">${tr("Stored")}: ${sum.rows.toLocaleString()} ${tr("telegrams")}, ${formatBytes(sum.bytes)} · ${tr("oldest")} ${when(sum.oldest)} · ${tr("newest")} ${when(sum.newest)}</div>` : nothing}
+        ${!s.auto_connect ? html`<div class="hint" style="color:var(--ha-warning)">${tr("Round-the-clock recording needs the connection to come back after a restart: turn on “Connect automatically when the add-on starts” in the gateway settings.")}</div>` : nothing}
+      </div>
+      <sl-button
+        slot="footer"
+        variant="danger"
+        outline
+        @click=${() => this.clearArchive()}
+        >${tr("Clear archive")}</sl-button
+      >
+      <sl-button slot="footer" @click=${() => (this.settingsOpen = false)}
+        >${tr("Cancel")}</sl-button
+      >
+      <sl-button
+        slot="footer"
+        variant="primary"
+        ?loading=${this.busy}
+        @click=${() => this.saveRecording()}
+        >${tr("Save")}</sl-button
+      >
+    </sl-dialog>`;
+  }
+
   render() {
     const q = this.filter.trim().toLowerCase();
-    const source = this.recorded();
-    const items = source.filter(
-      (t) =>
-        !q ||
-        `${t.source} ${t.destination} ${t.destination_name ?? ""} ${t.apci} ${t.value ?? ""} ${t.raw}`
-          .toLowerCase()
-          .includes(q),
-    );
     const connected = store.bus.state === "CONNECTED";
+    const live = this.mode === "live";
+    const liveItems = live
+      ? this.recorded().filter((t) => this.passes(t, q))
+      : [];
     const dec = store.bus.decoding;
     const decoding =
       !dec || !dec.project
         ? tr("no project open, names and values need one")
         : `${tr("decoding")} ${dec.with_dpt}/${dec.addresses}${dec.from_objects ? ` (${dec.from_objects} ${tr("from objects")})` : ""}`;
+    const state = connected
+      ? html`<span style="color:var(--ha-success)">●</span>
+          ${store.bus.recording ? tr("recording") : tr("connected")}`
+      : store.bus.retrying
+        ? html`<span style="color:var(--ha-warning)">●</span>
+            ${tr("reconnecting…")}`
+        : tr("not connected");
     return html`
       <div class="toolbar">
-        <span class="muted"
-          >${connected ? html`<span style="color:var(--ha-success)">●</span> recording` : "not connected"}</span
-        >
+        <sl-button-group>
+          <sl-button
+            size="small"
+            variant=${live ? "primary" : "default"}
+            @click=${() => this.setMode("live")}
+            >${tr("Live")}</sl-button
+          >
+          <sl-button
+            size="small"
+            variant=${live ? "default" : "primary"}
+            @click=${() => this.setMode("archive")}
+            >${tr("Archive")}</sl-button
+          >
+        </sl-button-group>
+        <span class="muted">${state}</span>
         <span
           class="muted"
           title=${tr("Group addresses whose datapoint type is known; set the DPT of an address in the Group addresses tab to decode it")}
@@ -192,37 +558,40 @@ export class MonitorView extends LitElement {
         <sl-input
           class="filter"
           size="small"
-          placeholder=${tr("Filter")}
+          placeholder=${tr("Filter (name, value, source…)")}
           clearable
-          @sl-input=${(e: Event) => (this.filter = (e.target as HTMLInputElement).value)}
+          .value=${this.filter}
+          @sl-input=${(e: Event) => {
+            this.filter = (e.target as HTMLInputElement).value;
+            this.scheduleArchive();
+          }}
           ><span slot="prefix">${icon("search", 14)}</span></sl-input
         >
-        <sl-button
+        <sl-input
+          class="narrow addr"
           size="small"
-          variant=${this.running ? "default" : "primary"}
-          ?disabled=${this.running}
-          @click=${() => this.start()}
-          >${tr("Start")}</sl-button
-        >
-        <sl-button
+          placeholder="1/2/ or 1/2/3"
+          title=${tr("Address: 1/2/ shows a whole middle group, 1/2/3 one address")}
+          clearable
+          .value=${this.address}
+          @sl-input=${(e: Event) => {
+            this.address = (e.target as HTMLInputElement).value;
+            this.scheduleArchive();
+          }}
+        ></sl-input>
+        <sl-input
+          class="narrow"
           size="small"
-          ?disabled=${!this.running}
-          @click=${() => this.stop()}
-          >${tr("Stop")}</sl-button
-        >
-        ${this.running ? nothing : html`<span class="muted">${tr("stopped")}${this.missed() > 0 ? ` · ${this.missed()} ${tr("new since")}` : ""}</span>`}
-        <sl-button
-          size="small"
-          @click=${() =>
-            api.post("api/bus/telegrams/clear", {}).then(() => {
-              store.telegrams = [];
-              this.frozen = this.running ? null : [];
-              this.sinceId = 0;
-              this.requestUpdate();
-            })}
-          >${tr("Clear")}</sl-button
-        >
-        <span class="muted">${items.length}</span>
+          placeholder="DPT 9.001"
+          title=${tr("Datapoint type: 9 for every 9.xxx, 9.001 for one sub-type")}
+          clearable
+          .value=${this.dpt}
+          @sl-input=${(e: Event) => {
+            this.dpt = (e.target as HTMLInputElement).value;
+            this.scheduleArchive();
+          }}
+        ></sl-input>
+        ${live ? this.renderLiveControls(liveItems.length) : this.renderArchiveControls()}
         <span style="flex:1"></span>
         <sl-input
           id="ga"
@@ -252,42 +621,150 @@ export class MonitorView extends LitElement {
         >
       </div>
       <div class="list">
-        ${
-          items.length
-            ? html`<table>
-                <tr>
-                  <th>${tr("Time")}</th>
-                  <th>${tr("Source")}</th>
-                  <th>${tr("Destination")}</th>
-                  <th>${tr("Name")}</th>
-                  <th>APCI</th>
-                  <th>${tr("Value")}</th>
-                  <th>DPT</th>
-                  <th>${tr("Raw")}</th>
-                </tr>
-                ${items.map(
-                  (t) =>
-                    html`<tr>
-                      <td class="muted">${t.time}</td>
-                      <td class="addr">${t.source}</td>
-                      <td class="addr">${t.destination}</td>
-                      <td>${t.destination_name ?? ""}</td>
-                      <td class="apci">${t.apci}</td>
-                      <td>
-                        ${t.value !== null && t.value !== undefined ? html`${String(t.value)}${t.unit ? html` <span class="muted">${t.unit}</span>` : nothing}` : t.destination_kind === "group" && dec?.project && !t.destination_dpt ? html`<span class="muted" title=${tr("This group address has no datapoint type in the project")}>${tr("no DPT")}</span>` : ""}
-                      </td>
-                      <td class="muted">
-                        ${t.destination_dpt ? dptShort(t.destination_dpt) : ""}
-                      </td>
-                      <td class="addr muted">${t.raw}</td>
-                    </tr>`,
-                )}
-              </table>`
-            : html`<div class="empty">
-                ${connected ? "Waiting for telegrams…" : "Connect to a gateway (top right) to see bus traffic."}
-              </div>`
-        }
+        ${live ? this.renderLive(liveItems, connected) : this.renderArchive()}
       </div>
+      ${this.renderRecordingDialog()}
     `;
+  }
+
+  private renderLiveControls(shown: number) {
+    return html`
+      <sl-button
+        size="small"
+        variant=${this.running ? "default" : "primary"}
+        ?disabled=${this.running}
+        @click=${() => this.start()}
+        >${tr("Start")}</sl-button
+      >
+      <sl-button
+        size="small"
+        ?disabled=${!this.running}
+        @click=${() => this.stop()}
+        >${tr("Stop")}</sl-button
+      >
+      ${this.running ? nothing : html`<span class="muted">${tr("stopped")}${this.missed() > 0 ? ` · ${this.missed()} ${tr("new since")}` : ""}</span>`}
+      <sl-button
+        size="small"
+        @click=${() =>
+          api.post("api/bus/telegrams/clear", {}).then(() => {
+            store.telegrams = [];
+            this.frozen = this.running ? null : [];
+            this.sinceId = 0;
+            this.requestUpdate();
+          })}
+        >${tr("Clear")}</sl-button
+      >
+      <span class="muted">${shown}</span>
+    `;
+  }
+
+  private renderArchiveControls() {
+    const custom = this.preset === "custom";
+    const csv = `api/bus/archive.csv?${this.params()}`;
+    return html`
+      <sl-select
+        size="small"
+        hoist
+        value=${this.preset}
+        style="width:150px"
+        @sl-change=${(e: Event) => {
+          this.preset = (e.target as HTMLSelectElement).value;
+          void this.loadArchive();
+        }}
+      >
+        ${PRESETS.map((p) => html`<sl-option value=${p.id}>${tr(p.label)}</sl-option>`)}
+      </sl-select>
+      ${
+        custom
+          ? html`<sl-input
+                size="small"
+                type="datetime-local"
+                .value=${this.customFrom}
+                @sl-change=${(e: Event) => {
+                  this.customFrom = (e.target as HTMLInputElement).value;
+                  void this.loadArchive();
+                }}
+              ></sl-input>
+              <span class="muted">–</span>
+              <sl-input
+                size="small"
+                type="datetime-local"
+                .value=${this.customTo}
+                @sl-change=${(e: Event) => {
+                  this.customTo = (e.target as HTMLInputElement).value;
+                  void this.loadArchive();
+                }}
+              ></sl-input>`
+          : nothing
+      }
+      <sl-input
+        class="narrow addr"
+        size="small"
+        placeholder="1.1.5"
+        title=${tr("Source address")}
+        clearable
+        .value=${this.source}
+        @sl-input=${(e: Event) => {
+          this.source = (e.target as HTMLInputElement).value;
+          this.scheduleArchive();
+        }}
+      ></sl-input>
+      <sl-select
+        size="small"
+        hoist
+        value=${this.kind || "all"}
+        style="width:120px"
+        @sl-change=${(e: Event) => {
+          const v = (e.target as HTMLSelectElement).value;
+          this.kind = v === "all" ? "" : v;
+          void this.loadArchive();
+        }}
+      >
+        <sl-option value="all">${tr("All")}</sl-option>
+        <sl-option value="group">${tr("Group")}</sl-option>
+        <sl-option value="individual">${tr("Individual")}</sl-option>
+      </sl-select>
+      <sl-button
+        size="small"
+        ?loading=${this.loading}
+        @click=${() => this.loadArchive()}
+        >${tr("Refresh")}</sl-button
+      >
+      <sl-button
+        size="small"
+        href=${csv}
+        download
+        title=${tr("Export the filtered archive as CSV")}
+        >${icon("download", 14)} CSV</sl-button
+      >
+      <sl-button
+        size="small"
+        title=${tr("Recording settings")}
+        @click=${() => {
+          void this.loadSummary();
+          this.settingsOpen = true;
+        }}
+        >${icon("settings", 14)}</sl-button
+      >
+      <span class="muted"
+        >${this.total.toLocaleString()}${this.summary ? ` / ${this.summary.rows.toLocaleString()}` : ""}</span
+      >
+    `;
+  }
+
+  private renderLive(items: TelegramRecord[], connected: boolean) {
+    if (items.length) return this.renderRows(items, false);
+    return html`<div class="empty">
+      ${connected ? tr("Waiting for telegrams…") : tr("Connect to a gateway (top right) to see bus traffic.")}
+    </div>`;
+  }
+
+  private renderArchive() {
+    if (!this.items.length)
+      return html`<div class="empty">
+        ${this.loading ? tr("Loading…") : store.bus.recording ? tr("Nothing recorded in this range.") : tr("Recording is off. Turn it on under the settings button to keep every telegram on disk.")}
+      </div>`;
+    return html`${this.renderRows(this.items, true)}
+    ${this.nextCursor ? html`<div class="more"><sl-button size="small" ?loading=${this.loading} @click=${() => this.loadArchive(true)}>${tr("Load more")} (${(this.total - this.items.length).toLocaleString()} ${tr("more")})</sl-button></div>` : nothing}`;
   }
 }

@@ -2,6 +2,21 @@
 
 ## Unreleased (2026-09-12)
 
+- Round-the-clock telegram recording to `/config/telegrams.db` (on by default, retention by age
+  and count, settings in the group monitor's Archive mode), with auto-connect retrying a gateway
+  that is down at boot. The group monitor gained a Live / Archive toggle and one filter bar for
+  both: text, address or middle group (`1/2/`), DPT (`9` or `9.001`); the archive adds time range,
+  source, group/individual, paging and a CSV export.
+- Charts dock: recorded values of up to four group addresses, line / steps / area, min / max /
+  average / last, live-growing ranges; chart buttons on telegrams, on group addresses and in the
+  statistics.
+- Statistics dock: totals, telegrams over time, a weekday × hour activity heatmap, busiest
+  addresses and devices, and an availability report (recording / link lost / add-on not running,
+  plus quiet stretches) that explains gaps in the history.
+- Network view: devices and group addresses as a force-directed graph (force-graph, MIT), pulsing
+  with live traffic; devices by room, addresses by main group, arrows on sending links.
+- MCP tools `monitor_archive`, `monitor_series`, `monitor_stats`; backup category "Recorded
+  telegrams" (off by default).
 - `tools/deploy-local.ps1` mirrors the add-on to `addons\addon-xknx-editor\xknx-editor`, the
   repository/add-on layout the add-on store uses, instead of a flat `addons\xknx-editor`.
 

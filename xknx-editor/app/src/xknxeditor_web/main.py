@@ -23,6 +23,7 @@ from starlette.staticfiles import StaticFiles
 from xknxeditor_web import __version__
 from xknxeditor_web.api import all_routes, endpoint
 from xknxeditor_web.bus import BusService
+from xknxeditor_web.recorder import TelegramRecorder
 from xknxeditor_web.config import SUPERVISOR_IP, Settings
 from xknxeditor_web.docs import DocStore
 from xknxeditor_web.editor import Editor
@@ -163,7 +164,10 @@ def create_app(settings: Settings | None = None) -> Starlette:
         app.state.worker = worker
         app.state.editor = await worker.run(Editor, settings, worker)
         app.state.jobs = JobManager(worker)
-        app.state.bus = BusService(settings.config_dir, worker)
+        app.state.recorder = TelegramRecorder(settings.config_dir)
+        app.state.recorder.start()
+        app.state.bus = BusService(settings.config_dir, worker, app.state.recorder)
+        app.state.editor.recorder = app.state.recorder
         editor: Editor = app.state.editor
 
         async def dpt_source() -> dict[str, Any]:
@@ -182,7 +186,7 @@ def create_app(settings: Settings | None = None) -> Starlette:
             await app.state.bus.refresh_dpts()
         if app.state.bus.settings.auto_connect:
             # Opt-in only: Home Assistant's KNX integration usually owns the gateway's tunnel.
-            asyncio.get_running_loop().create_task(app.state.bus.connect())
+            app.state.bus.keep_connected()
         app.state.mcp_tools = mcp["tools"]
         if mcp["server"] is not None:
             log.info("MCP server ready at /mcp with %d tools", len(mcp["tools"]))
@@ -193,6 +197,9 @@ def create_app(settings: Settings | None = None) -> Starlette:
             app.state.dpt_task.cancel()
             with contextlib.suppress(Exception):
                 await app.state.bus.shutdown()
+            with contextlib.suppress(Exception):
+                await app.state.recorder.stop()
+                app.state.recorder.close()
             with contextlib.suppress(Exception):
                 await worker.run(app.state.editor.close)
             worker.stop()
