@@ -4,7 +4,9 @@
 
 .DESCRIPTION
   Packs the vendored editor sources into one tarball (see pack-vendor.ps1), mirrors xknx-editor/
-  to \\<host>\addons\xknx-editor without the vendored directory itself, and stamps config.yaml
+  to \\<host>\addons\addon-xknx-editor\xknx-editor (repository folder with the add-on folder
+  inside, the layout the add-on store uses) without the vendored directory itself, and stamps
+  config.yaml
   with "version: dev-<short git sha>" so the Supervisor sees every redeploy as an update (the
   committed file keeps "version: dev", the community add-on convention).
 
@@ -23,7 +25,7 @@ param(
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
 $src = Join-Path $repo "xknx-editor"
-$dst = "\\$HostName\$Share\xknx-editor"
+$dst = "\\$HostName\$Share\addon-xknx-editor\xknx-editor"
 
 if (-not (Test-Path "\\$HostName\$Share")) {
   throw "\\$HostName\$Share is not reachable. Is the host up and the Samba add-on running?"

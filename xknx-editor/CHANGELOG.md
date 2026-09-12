@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased (2026-09-12)
+
+- `tools/deploy-local.ps1` mirrors the add-on to `addons\addon-xknx-editor\xknx-editor`, the
+  repository/add-on layout the add-on store uses, instead of a flat `addons\xknx-editor`.
+
 ## 0.1.0 (2026-09-11)
 
 First public release. A web-based KNX project editor as a Home Assistant add-on, built on xknx and

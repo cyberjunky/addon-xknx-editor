@@ -52,7 +52,8 @@ User documentation for the add-on itself is in [xknx-editor/DOCS.md](xknx-editor
 
 ## Installing (local build)
 
-1. Copy the `xknx-editor/` folder into your Home Assistant `addons` share (`\\<host>\addons`), or
+1. Copy the `xknx-editor/` folder into your Home Assistant `addons` share as
+   `\\<host>\addons\addon-xknx-editor\xknx-editor` (the layout the add-on store uses), or
    run `tools/deploy-local.ps1`, which packs the vendored sources, mirrors the folder and stamps the
    version with the git sha.
 2. Settings → Add-ons → Add-on store → ⋮ → _Check for updates_. "XKNX Editor (dev)" appears under
