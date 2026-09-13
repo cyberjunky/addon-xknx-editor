@@ -1024,8 +1024,10 @@ ${this.hexDiff(s.current, s.planned, s.address)}</pre>`,
       </p>`;
     if (found.length === 1)
       return html`<p class="hint" style="color:var(--ha-success)">
-        ${tr("One device is in programming mode")} (${found[0]}).
-        ${tr("Assign writes the address into it.")}
+        ${tr("One device is in programming mode. It currently carries")}
+        <strong>${found[0]}</strong>; ${tr("Assign writes")}
+        <strong>${this.device?.individual_address ?? ""}</strong>
+        ${tr("into it, replacing that address.")}
       </p>`;
     if (found.length > 1)
       return html`<p class="hint" style="color:var(--ha-warning)">

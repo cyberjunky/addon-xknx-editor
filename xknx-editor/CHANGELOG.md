@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.8 (2026-09-13)
+
+- The Assign address dialog says which address the device in programming mode carries now and
+  which one Assign will write into it, so there is no doubt about what changes.
+
 ## 0.2.7 (2026-09-13)
 
 - When nothing answers at a device's address, the add-on looks for a device in programming mode

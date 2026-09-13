@@ -670,6 +670,10 @@ export const VIEWS_NL: Record<string, string> = {
     "Laat er precies één over, of geef een serienummer op.",
   "Waiting: press the programming button on the device (its LED lights up). Nothing is written until one device answers.":
     "Wachten: druk op de programmeerknop van het apparaat (de LED gaat branden). Er wordt niets geschreven tot één apparaat antwoordt.",
+  "One device is in programming mode. It currently carries":
+    "Eén apparaat staat in programmeermodus. Het heeft nu",
+  "Assign writes": "Toewijzen schrijft",
+  "into it, replacing that address.": "erin en vervangt dat adres.",
 };
 
 export const VIEWS_DE: Record<string, string> = {
@@ -1346,4 +1350,8 @@ export const VIEWS_DE: Record<string, string> = {
     "Lassen Sie genau eines übrig oder geben Sie eine Seriennummer an.",
   "Waiting: press the programming button on the device (its LED lights up). Nothing is written until one device answers.":
     "Warten: Drücken Sie die Programmiertaste am Gerät (die LED leuchtet). Es wird nichts geschrieben, bis ein Gerät antwortet.",
+  "One device is in programming mode. It currently carries":
+    "Ein Gerät ist im Programmiermodus. Es trägt derzeit",
+  "Assign writes": "Zuweisen schreibt",
+  "into it, replacing that address.": "hinein und ersetzt diese Adresse.",
 };
