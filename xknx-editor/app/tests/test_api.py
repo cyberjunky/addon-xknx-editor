@@ -372,3 +372,20 @@ def test_project_import_takes_its_product_data_into_the_catalog(client: TestClie
     assert client.get("/api/catalog").json()["products"] >= 1
     devices = client.get("/api/project/devices").json()["items"]
     assert devices and all(d["resolved"] for d in devices)
+
+
+def test_early_bcu_devices_are_refused_before_the_bus() -> None:
+    """Mask 0021 is a BCU2: its load state machine is memory mapped, which the engine does not
+    drive, so the device would reject every load step (seen on a Merten 6305, 2026-09-13)."""
+    from types import SimpleNamespace
+
+    from xknxeditor_web.programming import mask_of, unsupported_mask
+
+    bcu2 = SimpleNamespace(program=SimpleNamespace(mask_version="MV-0021"))
+    system_b = SimpleNamespace(program=SimpleNamespace(mask_version="MV-07B0"))
+    assert mask_of(bcu2) == "0021" and mask_of(system_b) == "07B0"
+    assert mask_of(SimpleNamespace(program=None)) == ""
+    refusal = unsupported_mask(bcu2)
+    assert "mask 0021" in refusal and "ETS" in refusal and "memory mapped" in refusal
+    assert unsupported_mask(system_b) == ""
+    assert unsupported_mask(SimpleNamespace(program=None)) == ""

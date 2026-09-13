@@ -81,6 +81,8 @@ def test_topology_carries_the_load_per_segment(loaded: Any, client: TestClient) 
         assert segment["device_count"] == len(segment["devices"])
 
 
+# The editor's project session belongs to the worker thread, so the checks run there too -
+# reading it from the test thread trips SQLite's own bookkeeping (seen on CI, 0.3.2).
 def test_health_reports_the_segment_draw(loaded: Any, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         loaded,
@@ -92,7 +94,7 @@ def test_health_reports_the_segment_draw(loaded: Any, client: TestClient, monkey
             "power_supplies": [],
         },
     )
-    findings = {f.check: f for f in health.run_checks(loaded)}
+    findings = {f.check: f for f in loaded.worker.run_blocking(health.run_checks, loaded)}
     assert findings["segment_too_many_devices"].severity == "error"
     assert "at most 64" in findings["segment_too_many_devices"].message
     assert findings["segment_bus_current"].severity == "warning"
@@ -114,7 +116,7 @@ def test_a_normal_segment_only_reports_the_figure(
             "power_supplies": ["Main supply"],
         },
     )
-    findings = {f.check: f for f in health.run_checks(loaded)}
+    findings = {f.check: f for f in loaded.worker.run_blocking(health.run_checks, loaded)}
     assert findings["segment_bus_current"].severity == "info"
     assert "150 mA of the 640 mA" in findings["segment_bus_current"].message
     assert "segment_too_many_devices" not in findings

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.3 (2026-09-13)
+
+- A device from the early BCU families (masks 0010-0025) is refused before anything is written,
+  with the reason: its load state machine is memory mapped, while the download engine drives the
+  property-based one, so every load step came back rejected
+  (`object 5 property 5 returned 0 elements`).
+
 ## 0.3.2 (2026-09-13)
 
 - Importing a `.knxproj` now takes the manufacturer data it bundles into the catalog as well, so

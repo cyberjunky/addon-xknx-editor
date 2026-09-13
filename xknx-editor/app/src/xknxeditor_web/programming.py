@@ -152,6 +152,34 @@ class ProgrammingError(RuntimeError):
     pass
 
 
+# Mask versions whose Load State Machine is memory mapped (Realisation Type 0): the BCU 1 and
+# BCU 2 families, and the TP-UART/BIM derivatives that share their resource layout. The download
+# engine writes load events to PID_LOAD_STATE_CONTROL instead, which these devices do not have.
+MEMORY_MAPPED_MASKS = {
+    "0010", "0011", "0012", "0013", "0020", "0021", "0025", "0030", "0090", "00C0",
+}
+
+
+def mask_of(application: Any) -> str:
+    """``MV-07B0`` -> ``07B0``; "" when the application does not say."""
+    raw = str(getattr(getattr(application, "program", None), "mask_version", "") or "")
+    return raw.removeprefix("MV-").upper()
+
+
+def unsupported_mask(application: Any) -> str:
+    """A sentence naming why this device cannot be programmed here, or "" when it can."""
+    mask = mask_of(application)
+    if mask not in MEMORY_MAPPED_MASKS:
+        return ""
+    return (
+        f"This device is one of the early BCU models (mask {mask}). Its load procedure is memory "
+        f"mapped, while the editor's download engine drives the load state machine through device "
+        f"properties (System B and newer); the memory-mapped variant is not implemented, so the "
+        f"device answers every load step with a rejection. Reading the device, the group monitor "
+        f"and the project itself work as usual - the download does not. Program this one from ETS."
+    )
+
+
 def parse_ia(text: str) -> int:
     area, line, dev = (int(p) for p in text.split("."))
     return (area << 12) | (line << 8) | dev
@@ -177,6 +205,9 @@ def prepare(editor: Editor, device_id: int, keyring: dict[str, Any] | None = Non
         raise ProgrammingError("The device has no individual address")
     if view._dyn is None:  # noqa: SLF001
         raise ProgrammingError("The application has no dynamic section to program")
+    refusal = unsupported_mask(view.app)
+    if refusal:
+        raise ApiError(refusal, 501)
     group_communication = None
     if with_groups:
         raw = parse_ia(ia)

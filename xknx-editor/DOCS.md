@@ -58,6 +58,12 @@ The last open project is reopened when the add-on restarts.
   that extracts it on a Windows PC with ETS (`Knx.Ets.XmlSigning.dll`). Stored under
   `/config/signing_key.json` only.
 
+> [!NOTE]
+> Programming needs a device whose load state machine is property based (mask 07B0 / System B and
+> the later masks). The early BCU models (masks 0010-0025) drive it through memory instead; that
+> variant is not implemented, and such a device is refused before anything is written. Everything
+> else - reading it, the monitor, the project - works.
+
 ## Recording, archive, charts, statistics, network
 
 With a gateway configured and _Connect automatically when the add-on starts_ on, the add-on keeps
