@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 (2026-09-13)
 
 - "Download PDF manual" is now "Find manual" and searches the web with whatever the device
   carries - manufacturer, order number, product, application, or an order number read out of
