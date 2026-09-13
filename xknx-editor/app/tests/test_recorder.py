@@ -293,3 +293,29 @@ def test_incoming_from_own_address_is_evidence_of_a_duplicate(tmp_path: Path) ->
     assert rec.incoming_from("1.1.9", now - 86400) == 1
     assert rec.incoming_from("1.1.3", now - 86400) == 0 and rec.incoming_from("", now) == 0
     rec.close()
+
+
+def test_an_untyped_address_is_charted_from_its_payloads(tmp_path: Path) -> None:
+    """Binary and float payloads chart even when the project types the address nowhere - the same
+    reading the monitor shows in italics, flagged as guessed."""
+    from xknxeditor_web.recorder import guess_numeric
+
+    assert guess_numeric("01") == 1.0 and guess_numeric("00") == 0.0
+    assert round(guess_numeric("0C 1E"), 2) == 21.08  # DPT 9 two-octet float
+    assert guess_numeric("42 18 00 00") == 38.0  # IEEE float
+    assert guess_numeric("") is None and guess_numeric("zz") is None and guess_numeric("0") is None
+
+    rec = TelegramRecorder(tmp_path)
+    now = time.time()
+    for i, raw in enumerate(("01", "00", "01")):
+        rec.add({**telegram(now - 30 + i, "4/2/1"), "raw": raw, "value": None, "unit": None})
+    rec.flush()
+    s = rec.series(parse_ga("4/2/1"), now - 60, now)
+    assert s["guessed"] is True and s["count"] == 3
+    assert [p[1] for p in s["points"]] == [1.0, 0.0, 1.0]
+    # A decoded value wins: nothing is guessed once the project knows the type.
+    rec.add(telegram(now, "4/2/1", True))
+    rec.flush()
+    typed = rec.series(parse_ga("4/2/1"), now - 60, now + 1)
+    assert typed.get("guessed") is not True and typed["count"] == 1
+    rec.close()

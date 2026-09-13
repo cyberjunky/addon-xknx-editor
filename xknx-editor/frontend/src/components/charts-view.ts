@@ -20,6 +20,8 @@ type Series = {
   bucket: number;
   count: number;
   color: string;
+  /** Read from the payloads: the project types this address nowhere. */
+  guessed: boolean;
 };
 type SeriesResponse = {
   ga: number;
@@ -30,6 +32,7 @@ type SeriesResponse = {
   count: number;
   bucketed: boolean;
   bucket: number;
+  guessed?: boolean;
   points: Point[];
 };
 
@@ -175,6 +178,9 @@ export class ChartsView extends LitElement {
       .muted {
         color: var(--ha-text-2);
       }
+      .guess {
+        font-style: italic;
+      }
       .empty {
         padding: 16px;
         color: var(--ha-text-2);
@@ -305,6 +311,7 @@ export class ChartsView extends LitElement {
       bucket: 0,
       count: 0,
       color,
+      guessed: false,
     };
     this.series = [...this.series, entry];
     this.query = "";
@@ -332,6 +339,7 @@ export class ChartsView extends LitElement {
       s.bucketed = r.bucketed;
       s.bucket = r.bucket;
       s.count = r.count;
+      s.guessed = !!r.guessed;
       this.lastTelegram = store.telegrams.at(-1)?.id ?? 0;
     } catch (e) {
       store.say(e instanceof ApiError ? e.message : String(e), "danger");
@@ -668,7 +676,7 @@ export class ChartsView extends LitElement {
                     <td class="num">${fmt(st.avg)}${u}</td>
                     <td class="num">${fmt(st.last)}${u}</td>
                     <td class="muted">
-                      ${s.bucketed ? `${tr("averaged per")} ${Math.round(s.bucket)} s` : s.points.length ? "" : tr("no numeric values in this range")}
+                      ${s.guessed ? html`<span class="guess">${tr("read from the payloads, this address has no datapoint type")}</span> ` : nothing}${s.bucketed ? `${tr("averaged per")} ${Math.round(s.bucket)} s` : s.points.length ? "" : tr("nothing to chart in this range")}
                     </td>
                   </tr>`;
                 })}

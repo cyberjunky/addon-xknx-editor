@@ -331,13 +331,34 @@ export class CatalogView extends LitElement {
     this.busy = true;
     try {
       const job = await api.waitJob(await start());
-      const added =
-        (job.result as { applications_added?: string[] } | null)
-          ?.applications_added?.length ?? 0;
+      const result = job.result as {
+        applications_added?: string[];
+        failed?: string[];
+        skipped?: { manufacturer: string; files: string[] }[];
+      } | null;
+      const added = result?.applications_added?.length ?? 0;
       store.say(
         added ? `Imported ${added} application(s)` : "Already in the catalog",
         "success",
       );
+      // A project can carry manufacturer folders the catalog cannot take (no Hardware.xml) or
+      // that it refused; silence there looks like success and leaves a device unresolved.
+      const problems = [
+        ...(result?.failed ?? []),
+        ...(result?.skipped ?? []).map(
+          (s) =>
+            `${s.manufacturer}: no product data in the project (${s.files.join(", ")})`,
+        ),
+      ];
+      if (problems.length)
+        window.setTimeout(
+          () =>
+            store.say(
+              [tr("Not everything could be imported:"), ...problems].join("\n"),
+              "danger",
+            ),
+          600,
+        );
       await this.load();
     } catch (err) {
       store.say(err instanceof ApiError ? err.message : String(err), "danger");

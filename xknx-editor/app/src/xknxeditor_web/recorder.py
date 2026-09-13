@@ -17,6 +17,7 @@ import csv
 import io
 import logging
 import sqlite3
+import struct
 import threading
 import time
 from collections.abc import Iterator
@@ -95,6 +96,31 @@ def decode_raw(dpt: str, raw: str) -> tuple[Any, str | None] | None:
     if value is not None and not isinstance(value, (int, float, str, bool)):
         value = str(value)
     return value, getattr(transcoder, "unit", None)
+
+
+def guess_numeric(raw: str) -> float | None:
+    """What a payload probably means when its address has no datapoint type: KNX types are bound
+    to a payload length, so the length leaves one likely reading. The same rule the group monitor
+    shows in italics, here so such an address can still be charted."""
+    hex_digits = raw.replace(" ", "")
+    if not hex_digits or len(hex_digits) % 2:
+        return None
+    try:
+        data = bytes.fromhex(hex_digits)
+    except ValueError:
+        return None
+    if len(data) == 1:
+        return float(data[0])
+    if len(data) == 2:  # DPT 9: 0.01 * M * 2^E, M an 11-bit two's complement mantissa
+        word = (data[0] << 8) | data[1]
+        exponent = (word & 0x7800) >> 11
+        mantissa = word & 0x07FF
+        if word & 0x8000:
+            mantissa -= 0x800
+        return 0.01 * mantissa * (2**exponent)
+    if len(data) == 4:
+        return struct.unpack(">f", data)[0]
+    return None
 
 
 def _text(value: Any) -> str | None:
@@ -438,7 +464,9 @@ class TelegramRecorder:
 
     def series(self, ga: int, since: float, until: float, points: int = 600) -> dict[str, Any]:
         """Numeric values of one group address over a range. Raw when they fit in ``points``,
-        otherwise averaged per time bucket with the bucket's min and max alongside."""
+        otherwise averaged per time bucket with the bucket's min and max alongside. An address the
+        project never typed has no decoded values at all; then the payloads are read the way the
+        monitor reads them, and the result says so."""
         self.flush()
         points = max(10, min(int(points), 5000))
         with self._lock:
@@ -446,6 +474,17 @@ class TelegramRecorder:
                 "SELECT count(*), max(unit) FROM telegrams WHERE ga = ? AND num IS NOT NULL AND ts BETWEEN ? AND ?",
                 (ga, since, until),
             ).fetchone()
+            if not n:
+                # Only when nothing was decoded at all: an address whose values came out as text
+                # is typed, and reading its payloads as numbers would be a lie.
+                decoded = self._db.execute(
+                    "SELECT count(*) FROM telegrams WHERE ga = ? AND value IS NOT NULL AND ts BETWEEN ? AND ?",
+                    (ga, since, until),
+                ).fetchone()[0]
+                if decoded:
+                    return {"ga": ga, "unit": unit, "count": 0, "bucketed": False, "bucket": 0,
+                            "guessed": False, "points": []}
+                return self._guessed_series(ga, since, until, points)
             if n <= points:
                 rows = self._db.execute(
                     "SELECT ts, num FROM telegrams WHERE ga = ? AND num IS NOT NULL AND ts BETWEEN ? AND ? ORDER BY ts",
@@ -461,6 +500,28 @@ class TelegramRecorder:
             ).fetchall()
         return {"ga": ga, "unit": unit, "count": n, "bucketed": True, "bucket": bucket,
                 "points": [[since + r[0] * bucket + bucket / 2, r[1], r[2], r[3]] for r in rows]}
+
+    def _guessed_series(self, ga: int, since: float, until: float, points: int) -> dict[str, Any]:
+        """Read the raw payloads of an untyped address. Called with the lock held."""
+        rows = self._db.execute(
+            "SELECT ts, raw FROM telegrams WHERE ga = ? AND raw != '' AND ts BETWEEN ? AND ? ORDER BY ts",
+            (ga, since, until),
+        ).fetchall()
+        values = [(ts, v) for ts, raw in rows if (v := guess_numeric(raw)) is not None]
+        if not values:
+            return {"ga": ga, "unit": None, "count": 0, "bucketed": False, "bucket": 0,
+                    "guessed": False, "points": []}
+        if len(values) > points:  # keep the newest, the range is what it is
+            values = values[-points:]
+        return {
+            "ga": ga,
+            "unit": None,
+            "count": len(values),
+            "bucketed": False,
+            "bucket": 0,
+            "guessed": True,
+            "points": [[ts, v, v, v] for ts, v in values],
+        }
 
     def stats(self, since: float, until: float, ga: int | None = None, top: int = 10) -> dict[str, Any]:
         """Totals, telegrams over time, weekday × hour heatmap and the busiest addresses in a range."""

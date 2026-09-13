@@ -74,6 +74,18 @@ def product_archives(path: Path) -> list[tuple[str, bytes]]:
     return out
 
 
+def manufacturer_folders(path: Path) -> dict[str, list[str]]:
+    """Every ``M-xxxx/`` folder in the project and what it holds, so a folder that carries no
+    product data can be named rather than silently skipped."""
+    with zipfile.ZipFile(path) as root:
+        found: dict[str, list[str]] = {}
+        for name in root.namelist():
+            m = _MANUFACTURER_DIR.match(name)
+            if m and not name.endswith("/"):
+                found.setdefault(m.group(1), []).append(name.split("/", 1)[1])
+    return found
+
+
 def synthesize_catalog(hardware_xml: bytes, mid: str) -> bytes:
     """A ``Catalog.xml`` listing every product × application program in ``hardware_xml``.
 

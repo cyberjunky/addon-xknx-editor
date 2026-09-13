@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.7 (2026-09-13)
+
+- An address the project never typed can still be charted: its payloads are read the way the
+  monitor reads them (1-bit switches, two-octet and IEEE floats), and the chart says the values
+  were read from the payloads.
+- The monitor drops the `~` in front of such a value; the italics already say it is a reading.
+- Importing product data from a project names the manufacturer folders it could not take - one
+  without `Hardware.xml` carries no product data, which used to pass silently and leave a device
+  unresolved.
+
 ## 0.3.6 (2026-09-13)
 
 - Fix 0.3.3/0.3.5: BCU 1, BCU 2 and BIM M112 devices are no longer refused. Commissioning one of

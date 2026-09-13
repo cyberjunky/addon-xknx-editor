@@ -28,7 +28,7 @@ from xknxeditor_web.device_view import FLAG_COLUMNS, DeviceView, instance_ref_fr
 from xknxeditor_web.errors import ApiError, NoProject, NotFound
 from xknxeditor_web.online_catalog import OnlineCatalog
 from xknxeditor_web import backup as backup_mod
-from xknxeditor_web.knxproj_products import NotAProject, product_archives
+from xknxeditor_web.knxproj_products import NotAProject, manufacturer_folders, product_archives
 from xknxeditor_web.product_files import KNXPROJ_SUFFIX, check_importable
 from xknxeditor_web.serialize import plain, tree_dict
 from xknxeditor_web.storage import refuse_network_location
@@ -1409,10 +1409,20 @@ class Editor:
         self.invalidate_catalog()
         if failed and not stored:
             raise ApiError(f"No product data could be imported from {path.name}: {failed[0]}")
+        # A manufacturer folder without Hardware.xml carries no importable product data (the
+        # catalog refuses the archive). Name it: "nothing happened" is otherwise indistinguishable
+        # from "that manufacturer was not in the file".
+        taken = {mid for mid, _blob in archives}
+        skipped = [
+            {"manufacturer": mid, "files": sorted(files)}
+            for mid, files in sorted(manufacturer_folders(path).items())
+            if mid not in taken
+        ]
         return {
             "stored": stored,
-            "manufacturers": [mid for mid, _blob in archives],
+            "manufacturers": sorted(taken),
             "failed": failed,
+            "skipped": skipped,
             "applications_added": sorted(after - before),
         }
 

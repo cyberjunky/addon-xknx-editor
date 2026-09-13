@@ -469,7 +469,7 @@ export class MonitorView extends LitElement {
       return html`<span
         class="guess"
         title=${tr("Read from the payload length, not from the project. Set the datapoint type of this address to see the real value.")}
-        >≈ ${guess.text}</span
+        >${guess.text}</span
       >`;
     return projectOpen
       ? html`<span

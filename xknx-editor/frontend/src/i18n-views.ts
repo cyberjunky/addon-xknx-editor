@@ -687,6 +687,7 @@ export const VIEWS_NL: Record<string, string> = {
   "Add a group address: pick a recorded one or type an address or name":
     "Groepsadres toevoegen: kies een opgenomen adres of typ een adres of naam",
   "nothing numeric": "niets numeriek",
+  "Not everything could be imported:": "Niet alles kon worden geïmporteerd:",
 };
 
 export const VIEWS_DE: Record<string, string> = {
@@ -1380,4 +1381,5 @@ export const VIEWS_DE: Record<string, string> = {
   "Add a group address: pick a recorded one or type an address or name":
     "Gruppenadresse hinzufügen: eine aufgezeichnete wählen oder Adresse bzw. Name eingeben",
   "nothing numeric": "nichts Numerisches",
+  "Not everything could be imported:": "Nicht alles konnte importiert werden:",
 };
