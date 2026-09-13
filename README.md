@@ -69,6 +69,14 @@ User documentation for the add-on itself is in [xknx-editor/DOCS.md](xknx-editor
    page. The Supervisor compares `version` in `xknx-editor/config.yaml` with the installed one,
    so every release raises it and is tagged `v<version>`.
 
+> [!NOTE]
+> Installed before 0.2.0, while `config.yaml` still read `version: dev`? Home Assistant cannot
+> compare `dev` with a release number — it is one of the special container tags, like `latest` —
+> so the update dialog lists 0.2.0 but stays greyed out on "Up-to-date". The Supervisor itself has
+> no such problem: run `ha addons update xknx_editor` in the Terminal & SSH add-on once, and every
+> later update works from the UI. Reinstalling also works but drops the add-on's `/config` data
+> (catalog, documents, keys, recorded telegrams), so back that up first from the File menu.
+
 ## Installing (local build)
 
 1. Copy the `xknx-editor/` folder into your Home Assistant `addons` share as
