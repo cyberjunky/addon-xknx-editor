@@ -2,6 +2,9 @@
 
 ## Unreleased (2026-09-13)
 
+- Picking a gateway from the list connects to it at once, and the gateway bubble says
+  "· not connected" / "· connecting…" / "· reconnecting…" next to a chosen gateway instead of
+  only changing the colour of the dot.
 - Import project takes the `.knxproj` from this computer (uploaded to `/config/imports`, then
   imported like before, password step included); picking a file on `/share` stays as the second
   option.

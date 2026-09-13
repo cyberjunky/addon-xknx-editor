@@ -31,6 +31,9 @@ const NL: Record<string, string> = {
   Connect: "Verbinden",
   Disconnect: "Verbinding verbreken",
   "Group monitor": "Groepsmonitor",
+  "Connected to": "Verbonden met",
+  "connecting…": "verbinden…",
+  "No gateway": "Geen gateway",
   "Import project from /share": "Project importeren vanaf /share",
   "Pick the .knxproj export on this computer; it is sent to the add-on and imported. Password-protected exports are fine, the password is asked next.":
     "Kies de .knxproj-export op deze computer; die wordt naar de add-on gestuurd en geïmporteerd. Exports met wachtwoord kunnen ook, het wachtwoord wordt hierna gevraagd.",
@@ -102,6 +105,9 @@ const DE: Record<string, string> = {
   Connect: "Verbinden",
   Disconnect: "Trennen",
   "Group monitor": "Gruppenmonitor",
+  "Connected to": "Verbunden mit",
+  "connecting…": "verbinden…",
+  "No gateway": "Kein Gateway",
   "Import project from /share": "Projekt von /share importieren",
   "Pick the .knxproj export on this computer; it is sent to the add-on and imported. Password-protected exports are fine, the password is asked next.":
     "Wählen Sie den .knxproj-Export auf diesem Computer; er wird an das Add-on gesendet und importiert. Passwortgeschützte Exporte gehen auch, das Passwort wird als Nächstes abgefragt.",

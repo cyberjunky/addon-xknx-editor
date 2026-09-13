@@ -203,15 +203,19 @@ export class GatewayMenu extends LitElement {
         : g.tunnelling
           ? "tunneling"
           : "routing";
+    // Picking a gateway is meant as "use this one": save it and connect straight away, so the
+    // bubble turns green without a second trip into the menu.
     void this.act(
-      () =>
-        api.post("api/bus/settings", {
+      async () => {
+        await api.post("api/bus/settings", {
           gateway_ip: g.ip,
           gateway_port: g.port,
           gateway_name: g.name,
           connection_type: type,
-        }),
-      `Gateway set to ${g.name}`,
+        });
+        await api.post("api/bus/connect", {});
+      },
+      `${tr("Connected to")} ${g.name}`,
     ).catch(() => undefined);
   }
 
@@ -288,12 +292,20 @@ export class GatewayMenu extends LitElement {
       (s.connection_type.startsWith("routing")
         ? `Routing ${s.multicast_group}`
         : "Connected");
+    const chosen =
+      s.gateway_name ||
+      s.gateway_ip ||
+      (s.connection_type.startsWith("routing") ? "Routing" : "");
+    // A chosen but unconnected gateway says so, since picking one and connecting are two steps
+    // when auto-connect is off (a restart, a refused tunnel).
     const label =
       b.state === "CONNECTED"
         ? connectedLabel
-        : s.gateway_name ||
-          s.gateway_ip ||
-          (s.connection_type.startsWith("routing") ? "Routing" : "No gateway");
+        : b.state === "CONNECTING"
+          ? `${chosen} · ${tr("connecting…")}`
+          : chosen
+            ? `${chosen} · ${b.retrying ? tr("reconnecting…") : tr("not connected")}`
+            : tr("No gateway");
     return html`
       <sl-dropdown
         hoist
