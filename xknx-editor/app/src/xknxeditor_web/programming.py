@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -24,6 +24,14 @@ from xknxeditor.download import (
 )
 from xknxeditor.download.download import download, preflight
 
+from xknx.exceptions import (
+    ManagementConnectionError,
+    ManagementConnectionRefused,
+    ManagementConnectionTimeout,
+)
+
+from xknxeditor_web.errors import ApiError
+
 if TYPE_CHECKING:
     from xknx import XKNX
 
@@ -31,6 +39,32 @@ if TYPE_CHECKING:
     from xknxeditor_web.editor import Editor
 
 log = logging.getLogger(__name__)
+
+
+@contextlib.asynccontextmanager
+async def explained(xknx: XKNX, address: str) -> AsyncIterator[None]:
+    """Turn xknx's management errors into something a KNX installer can act on."""
+    own = str(xknx.current_address)
+    try:
+        yield
+    except ManagementConnectionRefused as exc:
+        raise ApiError(
+            f"{address} refused the connection or dropped it ({exc}). A device accepts one "
+            f"management connection at a time: close the device in ETS or any other tool that has "
+            f"it open, and make sure nothing else on the bus uses this editor's address {own} "
+            f"(Gateway settings -> Own individual address). The group monitor does not take the "
+            f"device: it listens on the same tunnel.",
+            502,
+        ) from exc
+    except ManagementConnectionTimeout as exc:
+        raise ApiError(
+            f"{address} did not answer in time ({exc}). Check that the device is powered and "
+            f"reachable from this line: couplers must let point-to-point telegrams through, and "
+            f"the editor sends from {own}.",
+            504,
+        ) from exc
+    except ManagementConnectionError as exc:
+        raise ApiError(f"Management connection to {address} failed: {exc}", 502) from exc
 
 SCOPES = {s.value: s for s in DownloadScope}
 

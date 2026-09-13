@@ -338,6 +338,7 @@ export class GatewayMenu extends LitElement {
             >${tr("Disconnect")}</sl-menu-item
           >
           <sl-menu-item value="monitor">${tr("Group monitor")}</sl-menu-item>
+          ${b.state === "CONNECTED" && b.own_address ? html`<sl-menu-label><span class="sub">${tr("The editor sends from")} ${b.own_address}</span></sl-menu-label>` : nothing}
           <sl-divider></sl-divider>
           <sl-menu-label>${tr("Gateways on the network")}</sl-menu-label>
           ${this.scanning ? html`<sl-menu-item disabled><sl-spinner style="font-size:14px"></sl-spinner>${tr("Scanning…")}</sl-menu-item>` : nothing}

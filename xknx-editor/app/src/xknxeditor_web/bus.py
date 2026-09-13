@@ -157,6 +157,9 @@ class BusService:
         s["settings"] = self.settings.public()
         s["decoding"] = dict(self.decoding)
         s["recording"] = self.recorder.enabled if self.recorder is not None else False
+        # The address the editor sends from: the gateway hands it out per tunnel. Two clients on
+        # one address make devices drop management connections, so it is worth showing.
+        s["own_address"] = str(self._xknx.current_address) if self._xknx is not None else ""
         s["retrying"] = self._auto_task is not None and not self._auto_task.done()
         return s
 

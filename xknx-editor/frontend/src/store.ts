@@ -34,6 +34,8 @@ export type BusStatus = {
   telegrams: number;
   /** Round-the-clock recording to /config/telegrams.db is on. */
   recording: boolean;
+  /** The individual address the editor sends from (the gateway assigns it per tunnel). */
+  own_address?: string;
   /** Auto-connect is still trying to reach the gateway. */
   retrying: boolean;
   decoding?: {

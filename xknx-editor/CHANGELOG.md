@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A refused or timed-out management connection explains itself (another tool holding the device,
+  or two clients sharing one individual address) instead of reporting
+  `ManagementConnectionRefused`, and the gateway menu shows the address the editor sends from.
 - The live group monitor keeps running while the bottom dock shows Charts, Statistics or the
   Catalog: its Start/Stop state moved to the shared store, since the dock unmounts the view.
 - Telegrams recorded while no project was open are decoded as soon as one is (or as soon as an

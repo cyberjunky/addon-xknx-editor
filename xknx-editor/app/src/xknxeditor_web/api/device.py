@@ -153,7 +153,8 @@ async def preflight(request: Request) -> Any:
         prepared = await ed.worker.run(prog.prepare, ed, device_id, _keyring(request))
         master = await ed.worker.run(prog.master_for, ed)
         jobs.report(job, None, "reading device")
-        return await prog.run_preflight(xknx, prepared, scope, master)
+        async with prog.explained(xknx, prepared.address):
+            return await prog.run_preflight(xknx, prepared, scope, master)
 
     return jobs.submit_async("preflight", run, device_id=device_id, scope=scope.value).to_dict()
 
@@ -177,7 +178,8 @@ async def program(request: Request) -> Any:
         def progress(done: int, total: int) -> None:
             jobs.report(job, done / total if total else None, f"load control {done}/{total}")
 
-        await prog.run_download(xknx, prepared, scope, master, progress)
+        async with prog.explained(xknx, prepared.address):
+            await prog.run_download(xknx, prepared, scope, master, progress)
         await ed.worker.run(ed.mark_programmed, device_id, scope.value)
         return {"device_id": device_id, "scope": scope.value, "address": prepared.address}
 
@@ -193,7 +195,8 @@ async def read_device(request: Request) -> Any:
     if not d.get("individual_address"):
         raise ApiError("The device has no individual address", 409)
     try:
-        return await prog.read_overview(xknx, d["individual_address"])
+        async with prog.explained(xknx, d["individual_address"]):
+            return await prog.read_overview(xknx, d["individual_address"])
     except Exception as exc:  # noqa: BLE001 - bus errors surface as 502
         raise ApiError(f"Read failed: {type(exc).__name__}: {exc}", 502) from exc
 
@@ -258,7 +261,8 @@ async def restart_device(request: Request) -> Any:
     if not d.get("individual_address"):
         raise ApiError("The device has no individual address", 409)
     try:
-        await prog.restart(xknx, d["individual_address"])
+        async with prog.explained(xknx, d["individual_address"]):
+            await prog.restart(xknx, d["individual_address"])
     except Exception as exc:  # noqa: BLE001
         raise ApiError(f"Restart failed: {type(exc).__name__}: {exc}", 502) from exc
     return {"restarted": d["individual_address"]}

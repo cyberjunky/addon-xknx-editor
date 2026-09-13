@@ -60,7 +60,8 @@ class JobManager:
                 job.progress = 1.0
             except Exception as exc:  # noqa: BLE001 - reported to the client
                 job.status = "failed"
-                job.error = f"{type(exc).__name__}: {exc}"
+                # An ApiError is already a sentence for the user; anything else keeps its type.
+                job.error = str(exc) if isinstance(exc, ApiError) else f"{type(exc).__name__}: {exc}"
                 job.detail["traceback"] = traceback.format_exc()
             self._emit(job)
 
@@ -85,7 +86,8 @@ class JobManager:
                 job.progress = 1.0
             except Exception as exc:  # noqa: BLE001 - reported to the client
                 job.status = "failed"
-                job.error = f"{type(exc).__name__}: {exc}"
+                # An ApiError is already a sentence for the user; anything else keeps its type.
+                job.error = str(exc) if isinstance(exc, ApiError) else f"{type(exc).__name__}: {exc}"
                 job.detail["traceback"] = traceback.format_exc()
             self._emit(job)
 
