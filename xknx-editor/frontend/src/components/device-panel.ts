@@ -254,6 +254,24 @@ export class DevicePanel extends LitElement {
     .muted {
       color: var(--ha-text-2);
     }
+    .ga-list {
+      margin-top: 8px;
+      max-height: 260px;
+      overflow: auto;
+      border: 1px solid var(--ha-divider);
+      border-radius: 8px;
+    }
+    .ga-row {
+      padding: 5px 10px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .ga-row:hover {
+      background: color-mix(in srgb, var(--ha-primary) 10%, transparent);
+    }
+    .ga-row.picked {
+      background: color-mix(in srgb, var(--ha-primary) 18%, transparent);
+    }
     pre.hex {
       font-family: ui-monospace, Menlo, Consolas, monospace;
       font-size: 12px;
@@ -276,6 +294,9 @@ export class DevicePanel extends LitElement {
   @state() private comObjects: ComObject[] = [];
   @state() private gas: GroupAddress[] = [];
   @state() private linkFor: ComObject | null = null;
+  // The link dialog: what was typed, and which address is picked (null while nothing is chosen).
+  @state() private linkQuery = "";
+  @state() private linkPick: number | null = null;
   @state() private paramFilter = "";
   @state() private scope = "full";
   @state() private busy: string | null = null;
@@ -431,20 +452,62 @@ export class DevicePanel extends LitElement {
       await api.get<{ items: GroupAddress[] }>("api/group-addresses")
     ).items;
     this.linkFor = co;
+    this.linkQuery = "";
+    this.linkPick = null;
+  }
+
+  /** Addresses matching what was typed: by address (1/2, 1/2/3) or by name. */
+  private linkMatches(): GroupAddress[] {
+    const q = this.linkQuery.trim().toLowerCase();
+    const list = q
+      ? this.gas.filter(
+          (g) => g.text.startsWith(q) || g.name.toLowerCase().includes(q),
+        )
+      : this.gas;
+    return list.slice(0, 50);
+  }
+
+  /** A three-level address typed in full that no group address uses yet. */
+  private newAddress(): string {
+    const q = this.linkQuery.trim();
+    if (!/^\d{1,2}\/\d\/\d{1,3}$/.test(q)) return "";
+    return this.gas.some((g) => g.text === q) ? "" : q;
+  }
+
+  /** Create the typed address, then link the object to it. */
+  private async createAndLink(sending: boolean): Promise<void> {
+    const text = this.newAddress();
+    const co = this.linkFor;
+    if (!text || !co) return;
+    const [main, middle, sub] = text.split("/").map(Number);
+    this.linkFor = null;
+    await this.act(async () => {
+      const ga = await api.post<GroupAddress>("api/group-addresses", {
+        address: (main << 11) | (middle << 8) | sub,
+        name: co.name,
+      });
+      await api.post(`api/devices/${this.deviceId}/com-objects/link`, {
+        ref_id: co.ref_id,
+        group_address_id: ga.id,
+        sending,
+      });
+    }, `Created ${text} and linked it`);
   }
 
   private link(sending: boolean): void {
-    const sel = this.renderRoot.querySelector(
-      "#link-ga",
-    ) as HTMLSelectElement | null;
     const co = this.linkFor;
-    if (!co || !sel?.value) return;
+    if (!co) return;
+    if (this.linkPick === null) {
+      if (this.newAddress()) void this.createAndLink(sending);
+      return;
+    }
+    const id = this.linkPick;
     this.linkFor = null;
     void this.act(
       () =>
         api.post(`api/devices/${this.deviceId}/com-objects/link`, {
           ref_id: co.ref_id,
-          group_address_id: Number(sel.value),
+          group_address_id: id,
           sending,
         }),
       "Linked",
@@ -995,21 +1058,44 @@ ${this.hexDiff(s.current, s.planned, s.address)}</pre>`,
       ?open=${co !== null}
       @sl-after-hide=${() => (this.linkFor = null)}
     >
-      <div class="row">
-        <sl-select
-          id="link-ga"
-          hoist
-          placeholder=${tr("Group address")}
-          style="flex:1"
-        >
-          ${this.gas.map((g) => html`<sl-option value=${String(g.id)}>${g.text} ${g.name}${g.datapoint_type ? ` (${g.datapoint_type})` : ""}</sl-option>`)}
-        </sl-select>
+      <sl-input
+        autofocus
+        size="small"
+        placeholder=${tr("Search an address or a name, or type a new address like 1/2/3")}
+        clearable
+        .value=${this.linkQuery}
+        @sl-input=${(e: Event) => {
+          this.linkQuery = (e.target as HTMLInputElement).value;
+          this.linkPick = null;
+        }}
+        ><span slot="prefix">${icon("search", 14)}</span></sl-input
+      >
+      <div class="ga-list">
+        ${this.linkMatches().map(
+          (g) =>
+            html`<div
+              class=${this.linkPick === g.id ? "ga-row picked" : "ga-row"}
+              @click=${() => (this.linkPick = g.id)}
+              @dblclick=${() => this.link(true)}
+            >
+              <span class="addr">${g.text}</span> ${g.name}
+              ${g.datapoint_type ? html`<span class="muted">${g.datapoint_type}</span>` : nothing}
+            </div>`,
+        )}
+        ${this.newAddress() ? html`<div class=${this.linkPick === null ? "ga-row picked" : "ga-row"} @click=${() => (this.linkPick = null)}>${icon("plus", 13)} ${tr("Create")} <span class="addr">${this.newAddress()}</span> ${tr("and link it")}</div>` : nothing}
+        ${!this.linkMatches().length && !this.newAddress() ? html`<div class="muted" style="padding:8px">${this.gas.length ? tr("Nothing matches. Type a full address like 1/2/3 to create it.") : tr("No group addresses yet. Type one like 1/2/3 to create it.")}</div>` : nothing}
       </div>
-      ${this.gas.length ? nothing : html`<span class="muted">No group addresses yet; create one under Group addresses.</span>`}
-      <sl-button slot="footer" @click=${() => this.link(false)}
+      <sl-button
+        slot="footer"
+        ?disabled=${this.linkPick === null && !this.newAddress()}
+        @click=${() => this.link(false)}
         >${tr("Link")}</sl-button
       >
-      <sl-button slot="footer" variant="primary" @click=${() => this.link(true)}
+      <sl-button
+        slot="footer"
+        variant="primary"
+        ?disabled=${this.linkPick === null && !this.newAddress()}
+        @click=${() => this.link(true)}
         >${tr("Link as sending")}</sl-button
       >
     </sl-dialog>`;

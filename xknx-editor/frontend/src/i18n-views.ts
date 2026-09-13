@@ -676,6 +676,13 @@ export const VIEWS_NL: Record<string, string> = {
   "into it, replacing that address.": "erin en vervangt dat adres.",
   "A full download also writes the individual address: if nothing answers at this address and exactly one device is in programming mode, that device is given the address first and then loaded.":
     "Een volledige download schrijft ook het fysieke adres: als er niets op dit adres antwoordt en precies één apparaat in programmeermodus staat, krijgt dat apparaat eerst het adres en wordt het daarna geladen.",
+  "Search an address or a name, or type a new address like 1/2/3":
+    "Zoek op adres of naam, of typ een nieuw adres zoals 1/2/3",
+  "and link it": "en koppel het",
+  "Nothing matches. Type a full address like 1/2/3 to create it.":
+    "Niets gevonden. Typ een volledig adres zoals 1/2/3 om het aan te maken.",
+  "No group addresses yet. Type one like 1/2/3 to create it.":
+    "Nog geen groepsadressen. Typ er een zoals 1/2/3 om het aan te maken.",
 };
 
 export const VIEWS_DE: Record<string, string> = {
@@ -1358,4 +1365,11 @@ export const VIEWS_DE: Record<string, string> = {
   "into it, replacing that address.": "hinein und ersetzt diese Adresse.",
   "A full download also writes the individual address: if nothing answers at this address and exactly one device is in programming mode, that device is given the address first and then loaded.":
     "Ein vollständiger Download schreibt auch die physikalische Adresse: Antwortet unter dieser Adresse nichts und ist genau ein Gerät im Programmiermodus, erhält dieses Gerät zuerst die Adresse und wird dann geladen.",
+  "Search an address or a name, or type a new address like 1/2/3":
+    "Nach Adresse oder Name suchen, oder eine neue Adresse wie 1/2/3 eingeben",
+  "and link it": "und verknüpfen",
+  "Nothing matches. Type a full address like 1/2/3 to create it.":
+    "Kein Treffer. Geben Sie eine vollständige Adresse wie 1/2/3 ein, um sie anzulegen.",
+  "No group addresses yet. Type one like 1/2/3 to create it.":
+    "Noch keine Gruppenadressen. Geben Sie eine wie 1/2/3 ein, um sie anzulegen.",
 };

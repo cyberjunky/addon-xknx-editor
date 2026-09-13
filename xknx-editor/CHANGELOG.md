@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 (2026-09-13)
+
+- Linking a group object: the address picker is a search box over address and name instead of a
+  dropdown of everything, and typing an address that does not exist yet offers to create it and
+  link it in one go (double-click links as sending).
+
 ## 0.2.9 (2026-09-13)
 
 - A full download writes the individual address when it has to: if nothing answers at the
