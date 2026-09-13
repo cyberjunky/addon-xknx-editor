@@ -1,6 +1,9 @@
-"""A failing job must report why. `ApiError` is used by name in both submit paths, so it has to be
-imported there: without it the handler itself raised NameError and the job showed "failed" with an
-empty message (0.2.1)."""
+"""A failing job must report why, and must not be seen as failed before it says why.
+
+`ApiError` is used by name in both submit paths, so it has to be imported there: without it the
+handler itself raised NameError and the job showed "failed" with an empty message (0.2.1). The
+status is set after the message for the same reason - a poller must not catch it in between.
+"""
 
 from __future__ import annotations
 

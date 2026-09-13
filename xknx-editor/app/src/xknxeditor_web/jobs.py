@@ -57,13 +57,15 @@ class JobManager:
             self._emit(job)
             try:
                 job.result = body(job)
-                job.status = "done"
                 job.progress = 1.0
+                job.status = "done"
             except Exception as exc:  # noqa: BLE001 - reported to the client
-                job.status = "failed"
+                # Status last: a client polling /api/jobs/{id} must never see "failed" before the
+                # message that says why.
+                job.detail["traceback"] = traceback.format_exc()
                 # An ApiError is already a sentence for the user; anything else keeps its type.
                 job.error = str(exc) if isinstance(exc, ApiError) else f"{type(exc).__name__}: {exc}"
-                job.detail["traceback"] = traceback.format_exc()
+                job.status = "failed"
             self._emit(job)
 
         self._worker._pool.submit(_run)  # noqa: SLF001 - jobs are part of the worker's contract
@@ -83,13 +85,15 @@ class JobManager:
             self._emit(job)
             try:
                 job.result = await body(job)
-                job.status = "done"
                 job.progress = 1.0
+                job.status = "done"
             except Exception as exc:  # noqa: BLE001 - reported to the client
-                job.status = "failed"
+                # Status last: a client polling /api/jobs/{id} must never see "failed" before the
+                # message that says why.
+                job.detail["traceback"] = traceback.format_exc()
                 # An ApiError is already a sentence for the user; anything else keeps its type.
                 job.error = str(exc) if isinstance(exc, ApiError) else f"{type(exc).__name__}: {exc}"
-                job.detail["traceback"] = traceback.format_exc()
+                job.status = "failed"
             self._emit(job)
 
         asyncio.get_running_loop().create_task(_run())
