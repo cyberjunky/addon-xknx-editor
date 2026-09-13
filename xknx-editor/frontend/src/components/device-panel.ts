@@ -615,6 +615,59 @@ export class DevicePanel extends LitElement {
         ${this.progress ? html`<span class="muted">${this.progress.stage}${this.progress.value !== null ? ` ${Math.round(this.progress.value * 100)}%` : ""}</span>` : nothing}
       </div>
 
+      <div class="row">
+        <sl-tooltip
+          content=${busTitle || tr("Read mask, application, serial number and error state from the device")}
+        >
+          <sl-button
+            size="small"
+            ?disabled=${!connected || this.busy !== null}
+            ?loading=${this.busy === "read"}
+            @click=${() =>
+              this.busAction("read", async () => {
+                this.overview = await api.post<Overview>(
+                  `api/devices/${d.id}/read`,
+                  {},
+                );
+              })}
+            >${tr("Read from device")}</sl-button
+          >
+        </sl-tooltip>
+        <sl-tooltip
+          content=${busTitle || tr("Write this address into a device in programming mode (press its programming button first)")}
+        >
+          <sl-button
+            size="small"
+            ?disabled=${!connected || !d.individual_address || this.busy !== null}
+            ?loading=${this.busy === "assign"}
+            @click=${() => {
+              this.assignSerial = "";
+              this.assignDialog = true;
+              this.watchProgramming(true);
+            }}
+            >${tr("Assign address")}</sl-button
+          >
+        </sl-tooltip>
+        <sl-tooltip content=${busTitle || tr("Restart the device")}>
+          <sl-button
+            size="small"
+            ?disabled=${!connected || this.busy !== null}
+            ?loading=${this.busy === "restart"}
+            @click=${() =>
+              this.busAction("restart", async () => {
+                await api.post(`api/devices/${d.id}/restart`, {});
+                store.say(tr("Restart sent"), "success");
+              })}
+            >${tr("Restart")}</sl-button
+          >
+        </sl-tooltip>
+        <sl-tooltip
+          content=${tr("Unload the application (select scope Unload, then Program device)")}
+          ><sl-button size="small" disabled
+            >${tr("Reset…")}</sl-button
+          ></sl-tooltip
+        >
+      </div>
       <sl-details summary=${tr("Manufacturer")} open>
         <table class="info">
           <tr>
@@ -714,59 +767,6 @@ export class DevicePanel extends LitElement {
         </div>
       </sl-details>
 
-      <div class="row">
-        <sl-tooltip
-          content=${busTitle || tr("Read mask, application, serial number and error state from the device")}
-        >
-          <sl-button
-            size="small"
-            ?disabled=${!connected || this.busy !== null}
-            ?loading=${this.busy === "read"}
-            @click=${() =>
-              this.busAction("read", async () => {
-                this.overview = await api.post<Overview>(
-                  `api/devices/${d.id}/read`,
-                  {},
-                );
-              })}
-            >${tr("Read from device")}</sl-button
-          >
-        </sl-tooltip>
-        <sl-tooltip
-          content=${busTitle || tr("Write this address into a device in programming mode (press its programming button first)")}
-        >
-          <sl-button
-            size="small"
-            ?disabled=${!connected || !d.individual_address || this.busy !== null}
-            ?loading=${this.busy === "assign"}
-            @click=${() => {
-              this.assignSerial = "";
-              this.assignDialog = true;
-              this.watchProgramming(true);
-            }}
-            >${tr("Assign address")}</sl-button
-          >
-        </sl-tooltip>
-        <sl-tooltip content=${busTitle || tr("Restart the device")}>
-          <sl-button
-            size="small"
-            ?disabled=${!connected || this.busy !== null}
-            ?loading=${this.busy === "restart"}
-            @click=${() =>
-              this.busAction("restart", async () => {
-                await api.post(`api/devices/${d.id}/restart`, {});
-                store.say(tr("Restart sent"), "success");
-              })}
-            >${tr("Restart")}</sl-button
-          >
-        </sl-tooltip>
-        <sl-tooltip
-          content=${tr("Unload the application (select scope Unload, then Program device)")}
-          ><sl-button size="small" disabled
-            >${tr("Reset…")}</sl-button
-          ></sl-tooltip
-        >
-      </div>
       ${this.overview ? this.renderOverview(this.overview) : nothing}
       ${this.preflight ? this.renderPreflight(this.preflight) : nothing}
       ${
@@ -1106,6 +1106,7 @@ ${this.hexDiff(s.current, s.planned, s.address)}</pre>`,
           This writes to the real device and cannot be undone. Run "Test before
           programming" first to see the changes.
         </p>
+        ${this.scope === "full" ? html`<p class="muted">${tr("A full download also writes the individual address: if nothing answers at this address and exactly one device is in programming mode, that device is given the address first and then loaded.")}</p>` : nothing}
         <sl-button slot="footer" @click=${() => (this.confirmProgram = false)}
           >${tr("Cancel")}</sl-button
         >

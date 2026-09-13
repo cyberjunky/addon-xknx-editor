@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -213,8 +214,28 @@ async def program(request: Request) -> Any:
         def progress(done: int, total: int) -> None:
             jobs.report(job, done / total if total else None, f"load control {done}/{total}")
 
-        async with prog.explained(xknx, prepared.address, _clash(request)):
-            await prog.run_download(xknx, prepared, scope, master, progress)
+        async def download() -> None:
+            async with prog.explained(xknx, prepared.address, _clash(request)):
+                await prog.run_download(xknx, prepared, scope, master, progress)
+
+        try:
+            await download()
+        except ApiError as exc:
+            # A full download is a commissioning step: when nothing answers at the project's
+            # address and exactly one device is in programming mode, that device is the one meant,
+            # so write the address into it first and then load the application. A partial download
+            # never touches the address.
+            if exc.status != 504 or scope is not prog.DownloadScope.FULL:
+                raise
+            found = await prog.programming_mode_devices(xknx)
+            if len(found) != 1:
+                raise
+            jobs.report(job, None, f"assigning {prepared.address} (device answers on {found[0]})")
+            await prog.assign_individual_address(xknx, prepared.address)
+            await asyncio.sleep(3)  # the device restarts after taking its new address
+            jobs.report(job, 0.0, "programming")
+            await download()
+            return {"assigned": prepared.address, "was": found[0]}
         await ed.worker.run(ed.mark_programmed, device_id, scope.value)
         return {"device_id": device_id, "scope": scope.value, "address": prepared.address}
 

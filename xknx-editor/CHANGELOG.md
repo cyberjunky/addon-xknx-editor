@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.9 (2026-09-13)
+
+- A full download writes the individual address when it has to: if nothing answers at the
+  project's address and exactly one device is in programming mode, that device is given the
+  address and then loaded, in one job. Partial downloads never touch the address.
+- Read from device, Assign address and Restart moved above the manufacturer block, where they can
+  be found without scrolling past the product data.
+
 ## 0.2.8 (2026-09-13)
 
 - The Assign address dialog says which address the device in programming mode carries now and

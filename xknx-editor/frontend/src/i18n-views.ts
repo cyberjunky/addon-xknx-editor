@@ -674,6 +674,8 @@ export const VIEWS_NL: Record<string, string> = {
     "Eén apparaat staat in programmeermodus. Het heeft nu",
   "Assign writes": "Toewijzen schrijft",
   "into it, replacing that address.": "erin en vervangt dat adres.",
+  "A full download also writes the individual address: if nothing answers at this address and exactly one device is in programming mode, that device is given the address first and then loaded.":
+    "Een volledige download schrijft ook het fysieke adres: als er niets op dit adres antwoordt en precies één apparaat in programmeermodus staat, krijgt dat apparaat eerst het adres en wordt het daarna geladen.",
 };
 
 export const VIEWS_DE: Record<string, string> = {
@@ -1354,4 +1356,6 @@ export const VIEWS_DE: Record<string, string> = {
     "Ein Gerät ist im Programmiermodus. Es trägt derzeit",
   "Assign writes": "Zuweisen schreibt",
   "into it, replacing that address.": "hinein und ersetzt diese Adresse.",
+  "A full download also writes the individual address: if nothing answers at this address and exactly one device is in programming mode, that device is given the address first and then loaded.":
+    "Ein vollständiger Download schreibt auch die physikalische Adresse: Antwortet unter dieser Adresse nichts und ist genau ein Gerät im Programmiermodus, erhält dieses Gerät zuerst die Adresse und wird dann geladen.",
 };
