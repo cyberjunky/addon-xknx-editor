@@ -11,6 +11,7 @@ dropout. Every telegram also goes to the ``TelegramRecorder`` when recording is 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import Awaitable, Callable
 import json
 import logging
@@ -26,7 +27,7 @@ from xknx.io.gateway_scanner import GatewayScanner
 from xknx.telegram import Telegram
 from xknx.telegram.address import GroupAddress, IndividualAddress
 
-from xknxeditor_web.recorder import TelegramRecorder
+from xknxeditor_web.recorder import TelegramRecorder, dpt_to_xknx
 from xknxeditor_web.worker import EditorWorker
 
 log = logging.getLogger(__name__)
@@ -344,6 +345,11 @@ class BusService:
             log.warning("could not read the project's DPT table: %s", exc)
             return len(self.dpt_map)
         self.apply_table(table)
+        # Telegrams recorded while no project was open carry no value; now that the types are
+        # known, decode them so the archive and the charts show them too.
+        if self.recorder is not None and self.dpt_map:
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(self.recorder.backfill, dict(self.dpt_map))
         return len(self.dpt_map)
 
     def apply_table(self, table: dict[str, Any]) -> None:
@@ -363,7 +369,7 @@ class BusService:
         # GroupAddressDPT.set() parses strings itself ("1.001"); it silently drops anything else.
         table: dict[Any, Any] = {}
         for address, dpt in self.dpt_map.items():
-            spec = _dpt_to_xknx(dpt)
+            spec = dpt_to_xknx(dpt)
             if DPTBase.parse_transcoder(spec) is not None:
                 table[GroupAddress(address)] = spec
         xknx.group_address_dpt.clear()
@@ -492,11 +498,3 @@ def _gateway_dict(g: Any) -> dict[str, Any]:
     }
 
 
-def _dpt_to_xknx(dpt: str) -> str:
-    """``DPST-1-1`` → ``1.001``; ``DPT-1`` → ``1``; pass anything else through."""
-    parts = dpt.split("-")
-    if parts[0] == "DPST" and len(parts) == 3 and parts[1].isdigit() and parts[2].isdigit():
-        return f"{int(parts[1])}.{int(parts[2]):03d}"
-    if parts[0] == "DPT" and len(parts) == 2 and parts[1].isdigit():
-        return parts[1]
-    return dpt

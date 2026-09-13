@@ -650,6 +650,12 @@ export const VIEWS_NL: Record<string, string> = {
   "Open a project to see its devices and group addresses as a network.":
     "Open een project om de apparaten en groepsadressen als netwerk te zien.",
   "Open in editor": "In editor openen",
+  "Nothing numeric was recorded for these addresses in this range.":
+    "Er is in dit bereik niets numerieks opgenomen voor deze adressen.",
+  "No project is open, so telegrams are recorded without a datapoint type and cannot be charted. Open the project: the addresses it knows are decoded, including what was recorded before.":
+    "Er is geen project open, dus telegrammen worden zonder datapunttype opgenomen en kunnen niet in een grafiek. Open het project: de adressen die het kent worden ontcijferd, ook wat eerder is opgenomen.",
+  "These addresses have no datapoint type in the project. Set it in the Group addresses tab and the recorded telegrams are decoded.":
+    "Deze adressen hebben geen datapunttype in het project. Stel dat in bij Groepsadressen; daarna worden de opgenomen telegrammen ontcijferd.",
 };
 
 export const VIEWS_DE: Record<string, string> = {
@@ -1306,4 +1312,10 @@ export const VIEWS_DE: Record<string, string> = {
   "Open a project to see its devices and group addresses as a network.":
     "Öffnen Sie ein Projekt, um seine Geräte und Gruppenadressen als Netzwerk zu sehen.",
   "Open in editor": "Im Editor öffnen",
+  "Nothing numeric was recorded for these addresses in this range.":
+    "In diesem Bereich wurde für diese Adressen nichts Numerisches aufgezeichnet.",
+  "No project is open, so telegrams are recorded without a datapoint type and cannot be charted. Open the project: the addresses it knows are decoded, including what was recorded before.":
+    "Es ist kein Projekt geöffnet, daher werden Telegramme ohne Datenpunkttyp aufgezeichnet und lassen sich nicht darstellen. Öffnen Sie das Projekt: Die Adressen, die es kennt, werden entschlüsselt, auch das zuvor Aufgezeichnete.",
+  "These addresses have no datapoint type in the project. Set it in the Group addresses tab and the recorded telegrams are decoded.":
+    "Diese Adressen haben im Projekt keinen Datenpunkttyp. Setzen Sie ihn unter Gruppenadressen, dann werden die aufgezeichneten Telegramme entschlüsselt.",
 };

@@ -202,13 +202,9 @@ export class MonitorView extends LitElement {
   @state() private dpt = "";
   // Live: the monitor records only while it is running, and it starts stopped and empty: neither
   // opening a project nor reloading the page should present traffic nobody asked to record.
-  // `frozen` is the list as it stood when Stop was pressed; telegrams keep arriving in the
-  // background either way, and `sinceId` is the last one that already existed when Start was
-  // pressed, so a run shows only what happened during it. Ids come from the backend and only
-  // ever increase.
-  @state() private running = false;
-  @state() private frozen: TelegramRecord[] | null = [];
-  private sinceId = 0;
+  // Telegrams keep arriving in the background either way, and a run shows only what happened
+  // during it. The state sits in the store (see `store.monitor`) so that switching the bottom
+  // dock to Charts and back does not end the run; ids come from the backend and only increase.
   // Archive: the recorded telegrams, newest first, paged with a cursor.
   @state() private preset = "24h";
   @state() private customFrom = localInput(Date.now() / 1000 - 3600);
@@ -223,8 +219,15 @@ export class MonitorView extends LitElement {
   @state() private settingsOpen = false;
   @state() private busy = false;
   private unsubscribe = () => {};
-  private lastProject = "";
   private debounce: number | undefined;
+
+  private get running(): boolean {
+    return store.monitor.running;
+  }
+
+  private get frozen(): TelegramRecord[] | null {
+    return store.monitor.frozen;
+  }
 
   connectedCallback(): void {
     super.connectedCallback();
@@ -232,8 +235,9 @@ export class MonitorView extends LitElement {
       this.stopOnProjectChange();
       this.requestUpdate();
     });
-    // Deliberately no backlog fetch: a restart starts clean.
-    if (!this.running) this.stop();
+    // Deliberately no backlog fetch: a page load starts clean. A run in progress is picked up
+    // from the store, so only the first mount of a session freezes an empty list.
+    this.stopOnProjectChange();
     void this.loadSummary();
   }
 
@@ -246,32 +250,40 @@ export class MonitorView extends LitElement {
    * project the user has moved away from. */
   private stopOnProjectChange(): void {
     const id = store.project.open ? (store.project.id ?? "") : "";
-    if (id === this.lastProject) return;
-    this.lastProject = id;
+    if (id === store.monitor.project) return;
+    store.monitor.project = id;
     this.stop();
   }
 
   /** The telegrams the live table shows: this run's while running, the frozen snapshot while stopped. */
   private recorded(): TelegramRecord[] {
     if (!this.running) return this.frozen ?? [];
-    return store.telegrams.filter((t) => t.id > this.sinceId);
+    return store.telegrams.filter((t) => t.id > store.monitor.sinceId);
   }
 
   /** How many arrived since the monitor stopped recording. */
   private missed(): number {
-    const last = this.frozen?.at(-1)?.id ?? this.sinceId;
+    const last = this.frozen?.at(-1)?.id ?? store.monitor.sinceId;
     return store.telegrams.filter((t) => t.id > last).length;
   }
 
   private start(): void {
-    this.sinceId = store.telegrams.at(-1)?.id ?? 0;
-    this.frozen = null;
-    this.running = true;
+    store.monitor = {
+      running: true,
+      sinceId: store.telegrams.at(-1)?.id ?? 0,
+      frozen: null,
+      project: store.monitor.project,
+    };
+    this.requestUpdate();
   }
 
   private stop(): void {
-    this.frozen = this.recorded();
-    this.running = false;
+    store.monitor = {
+      ...store.monitor,
+      running: false,
+      frozen: this.recorded(),
+    };
+    this.requestUpdate();
   }
 
   updated(): void {
@@ -648,8 +660,11 @@ export class MonitorView extends LitElement {
         @click=${() =>
           api.post("api/bus/telegrams/clear", {}).then(() => {
             store.telegrams = [];
-            this.frozen = this.running ? null : [];
-            this.sinceId = 0;
+            store.monitor = {
+              ...store.monitor,
+              sinceId: 0,
+              frozen: this.running ? null : [],
+            };
             this.requestUpdate();
           })}
         >${tr("Clear")}</sl-button

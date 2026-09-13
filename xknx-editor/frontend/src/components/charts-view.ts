@@ -443,6 +443,17 @@ export class ChartsView extends LitElement {
     };
   }
 
+  /** Every picked address is recorded but none of it carries a number: say why, since an empty
+   * plot looks like a bug. Telegrams recorded while no project was open have no decoded value
+   * until the project supplies the datapoint types. */
+  private renderNoValues() {
+    const typed = this.series.some((s) => s.dpt);
+    return html`<div class="empty">
+      ${tr("Nothing numeric was recorded for these addresses in this range.")}
+      ${!store.project.open ? html`<br />${tr("No project is open, so telegrams are recorded without a datapoint type and cannot be charted. Open the project: the addresses it knows are decoded, including what was recorded before.")}` : !typed ? html`<br />${tr("These addresses have no datapoint type in the project. Set it in the Group addresses tab and the recorded telegrams are decoded.")}` : nothing}
+    </div>`;
+  }
+
   render() {
     const matches = this.candidates();
     const custom = this.preset === "custom";
@@ -550,7 +561,9 @@ export class ChartsView extends LitElement {
       <div class="plot">
         ${
           this.series.length
-            ? nothing
+            ? this.series.some((s) => s.points.length)
+              ? nothing
+              : this.renderNoValues()
             : html`<div class="empty">
                 ${tr("Pick a group address above, or press the chart button on a telegram in the group monitor or on a group address. Values come from the recorded archive; the range “Last hour” and the like keep growing live.")}
               </div>`

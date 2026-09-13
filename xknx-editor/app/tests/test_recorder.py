@@ -248,3 +248,32 @@ def test_dpt_filter_rule() -> None:
     assert _dpt_matches("9.001", "DPST-9-1") and _dpt_matches("DPST-9-1", "DPST-9-1") and _dpt_matches("9.1", "DPST-9-1")
     assert not _dpt_matches("9.002", "DPST-9-1") and not _dpt_matches("1", "DPST-9-1") and not _dpt_matches("9", None)
     assert _dpt_matches("9.0", "DPST-9-1") is False  # 9.000 is a sub-type, not a wildcard
+
+
+def test_decode_raw_and_backfill(tmp_path: Path) -> None:
+    """Telegrams recorded before the project knew their types are decoded afterwards."""
+    from xknxeditor_web.recorder import decode_raw
+
+    assert decode_raw("DPST-9-1", "0C 1E") == (21.08, "°C")
+    assert decode_raw("DPST-1-1", "01") == (True, None)  # Switch.ON unwraps to its plain value
+    assert decode_raw("DPST-9-1", "01") is None  # wrong length for the type
+    assert decode_raw("DPST-9-1", "") is None and decode_raw("nonsense", "01") is None
+
+    rec = TelegramRecorder(tmp_path)
+    now = time.time()
+    for i, raw in enumerate(("0C 1E", "0C 2E")):
+        rec.add({**telegram(now - i, "1/0/1"), "raw": raw, "value": None, "unit": None})
+    rec.add({**telegram(now, "1/0/9"), "raw": "07 D0", "value": None, "unit": None})  # no DPT known
+    decoded = {**telegram(now, "1/0/1", 25.0), "raw": "0D 00"}
+    rec.add(decoded)
+    rec.flush()
+
+    dpts = {parse_ga("1/0/1"): "DPST-9-1"}
+    assert rec.backfill(dpts) == 2
+    assert rec.backfill(dpts) == 0  # idempotent: only rows without a value are touched
+    rows = {r["raw"]: r for r in rec.archive()["items"]}
+    assert rows["0C 1E"]["num"] == 21.08 and rows["0C 1E"]["unit"] == "°C"
+    assert rows["0D 00"]["value"] == "25.0"  # what the monitor decoded live is left alone
+    assert rows["07 D0"]["num"] is None  # an address the project does not know stays raw
+    assert rec.series(parse_ga("1/0/1"), now - 60, now + 60)["count"] == 3
+    rec.close()

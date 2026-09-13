@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- The live group monitor keeps running while the bottom dock shows Charts, Statistics or the
+  Catalog: its Start/Stop state moved to the shared store, since the dock unmounts the view.
+- Telegrams recorded while no project was open are decoded as soon as one is (or as soon as an
+  address gets a datapoint type), so the archive and the charts show their values instead of
+  nothing.
+- A chart with no numeric values says why. The statistics histogram no longer stretches its
+  labels (they were drawn inside a horizontally scaled SVG), and availability shares below one
+  per cent read "<1%" rather than "0%".
+
 ## 0.2.0 (2026-09-13)
 
 - Picking a gateway from the list connects to it at once, and the gateway bubble says

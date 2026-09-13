@@ -53,6 +53,13 @@ function duration(seconds: number): string {
   return `${(s / 86400).toFixed(1)} d`;
 }
 
+/** A percentage that does not round a real sliver away to "0%". */
+function share(part: number, total: number): string {
+  const pct = (part / total) * 100;
+  if (pct > 0 && pct < 1) return "<1%";
+  return `${Math.round(pct)}%`;
+}
+
 function when(ts: number): string {
   return new Date(ts * 1000).toLocaleString([], {
     dateStyle: "short",
@@ -125,8 +132,32 @@ export class StatsView extends LitElement {
     }
     svg {
       display: block;
-      width: 100%;
       overflow: visible;
+    }
+    .hist {
+      display: flex;
+      align-items: flex-end;
+      gap: 1px;
+      height: 90px;
+    }
+    .hist .bar-slot {
+      flex: 1;
+      height: 100%;
+      display: flex;
+      align-items: flex-end;
+    }
+    .hist .bar-slot > div {
+      width: 100%;
+      background: var(--ha-primary);
+      border-radius: 1px 1px 0 0;
+      min-height: 0;
+    }
+    .ticks {
+      display: flex;
+      justify-content: space-between;
+      color: var(--ha-text-2);
+      font-size: 11px;
+      margin-top: 2px;
     }
     svg text {
       font-size: 10px;
@@ -227,24 +258,28 @@ export class StatsView extends LitElement {
     }
   }
 
+  /** Bars and labels as plain elements: an SVG stretched to the dock's width with
+   * preserveAspectRatio="none" scales its text along with it, which reads as a distorted font. */
   private histogram(s: Stats) {
     const counts = s.histogram.counts;
     const max = Math.max(1, ...counts);
-    const w = 600;
-    const h = 90;
-    const bw = w / counts.length;
-    const labels = [0, 0.25, 0.5, 0.75, 1].map((f) => ({
-      x: f * w,
-      ts: s.since + f * (s.until - s.since),
-    }));
-    return svg`<svg viewBox="0 0 ${w} ${h + 16}" preserveAspectRatio="none" style="height:${h + 16}px">
-      ${counts.map((c, i) => {
-        const bh = (c / max) * h;
-        const from = s.since + i * s.histogram.width;
-        return svg`<rect x=${i * bw + 0.5} y=${h - bh} width=${Math.max(0.5, bw - 1)} height=${bh} fill="var(--ha-primary)" rx="1"><title>${when(from)} – ${when(from + s.histogram.width)}: ${c.toLocaleString()}</title></rect>`;
-      })}
-      ${labels.map((l, i) => svg`<text x=${l.x} y=${h + 12} text-anchor=${i === 0 ? "start" : i === 4 ? "end" : "middle"}>${when(l.ts)}</text>`)}
-    </svg>`;
+    const ticks = [0, 0.25, 0.5, 0.75, 1].map(
+      (f) => s.since + f * (s.until - s.since),
+    );
+    return html`<div class="hist">
+        ${counts.map((c, i) => {
+          const from = s.since + i * s.histogram.width;
+          return html`<div
+            class="bar-slot"
+            title=${`${when(from)} – ${when(from + s.histogram.width)}: ${c.toLocaleString()}`}
+          >
+            <div style="height:${(c / max) * 100}%"></div>
+          </div>`;
+        })}
+      </div>
+      <div class="ticks">
+        ${ticks.map((ts) => html`<span>${when(ts)}</span>`)}
+      </div>`;
   }
 
   private heatmap(s: Stats) {
@@ -272,7 +307,7 @@ export class StatsView extends LitElement {
         ${a.segments.map((seg) => html`<div style="width:${((seg.to - seg.from) / span) * 100}%;background:${STATE_COLOR[seg.state]}" title=${`${tr(STATE_LABEL[seg.state])}: ${when(seg.from)} – ${when(seg.to)} (${duration(seg.to - seg.from)})`}></div>`)}
       </div>
       <div class="legend">
-        ${(["recording", "link_down", "not_running"] as const).map((k) => html`<span><i style="background:${STATE_COLOR[k]}"></i>${tr(STATE_LABEL[k])} ${Math.round((a.coverage[k] / total) * 100)}%</span>`)}
+        ${(["recording", "link_down", "not_running"] as const).map((k) => html`<span><i style="background:${STATE_COLOR[k]}"></i>${tr(STATE_LABEL[k])} ${share(a.coverage[k], total)}</span>`)}
       </div>
       ${
         a.quiet.length

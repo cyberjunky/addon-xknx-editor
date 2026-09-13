@@ -128,6 +128,17 @@ class Store {
     null;
   bus: BusStatus = EMPTY_BUS;
   telegrams: TelegramRecord[] = [];
+  /** The live group monitor's recording state. It lives here, not in the view: the bottom dock
+   * shows one tab at a time, so Lit unmounts the monitor when Charts or Statistics is picked and
+   * a run would otherwise end whenever the user looks at something else. `frozen` is the list as
+   * it stood when Stop was pressed, `sinceId` the last telegram that already existed when Start
+   * was pressed, `project` the project the run belongs to. */
+  monitor: {
+    running: boolean;
+    sinceId: number;
+    frozen: TelegramRecord[] | null;
+    project: string;
+  } = { running: false, sinceId: 0, frozen: [], project: "" };
   private listeners = new Set<Listener>();
   private stop: (() => void) | null = null;
 

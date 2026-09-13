@@ -64,6 +64,39 @@ CREATE TABLE IF NOT EXISTS meta (
 EVENT_KINDS = ("start", "stop", "connected", "disconnected")
 
 
+def dpt_to_xknx(dpt: str) -> str:
+    """``DPST-1-1`` -> ``1.001``; ``DPT-1`` -> ``1``; pass anything else through."""
+    parts = dpt.split("-")
+    if parts[0] == "DPST" and len(parts) == 3 and parts[1].isdigit() and parts[2].isdigit():
+        return f"{int(parts[1])}.{int(parts[2]):03d}"
+    if parts[0] == "DPT" and len(parts) == 2 and parts[1].isdigit():
+        return parts[1]
+    return dpt
+
+
+def decode_raw(dpt: str, raw: str) -> tuple[Any, str | None] | None:
+    """The value a stored payload carries under ``dpt``, or None when it does not fit (a wrong
+    length, a payload that is not a group value). Mirrors what the live monitor shows."""
+    from xknx.dpt import DPTArray, DPTBase, DPTBinary
+
+    transcoder = DPTBase.parse_transcoder(dpt_to_xknx(dpt))
+    if transcoder is None or not raw:
+        return None
+    try:
+        if transcoder.payload_type is DPTBinary:
+            payload: Any = DPTBinary(int(raw.replace(" ", ""), 16))
+        else:
+            payload = DPTArray(bytes.fromhex(raw.replace(" ", "")))
+        value = transcoder.from_knx(payload)
+    except Exception:  # noqa: BLE001 - a payload that does not match the type is simply skipped
+        return None
+    if hasattr(value, "value"):
+        value = value.value
+    if value is not None and not isinstance(value, (int, float, str, bool)):
+        value = str(value)
+    return value, getattr(transcoder, "unit", None)
+
+
 def _text(value: Any) -> str | None:
     """The display form of a decoded value, the way the live monitor shows it (JSON-style
     booleans, numbers as they are)."""
@@ -497,6 +530,48 @@ class TelegramRecorder:
         if last_tg is not None and segments and segments[-1]["state"] == "recording" and until - last_tg > QUIET_GAP:
             quiet.insert(0, {"from": max(last_tg, since), "to": until})
         return {"since": since, "until": until, "segments": segments, "coverage": coverage, "quiet": quiet}
+
+    def backfill(self, dpt_map: dict[int, str], limit: int = 200_000) -> int:
+        """Fill in value/num/unit for rows recorded before their datapoint type was known (no
+        project open, or the address typed later). Only rows that have no value are touched, so it
+        is idempotent and never overwrites what the monitor decoded live."""
+        if not dpt_map:
+            return 0
+        self.flush()
+        done = 0
+        with self._lock:
+            pending = self._db.execute(
+                "SELECT DISTINCT ga FROM telegrams WHERE value IS NULL AND ga IS NOT NULL AND raw != ''"
+            ).fetchall()
+        for (ga,) in pending:
+            dpt = dpt_map.get(ga)
+            if not dpt:
+                continue
+            with self._lock:
+                rows = self._db.execute(
+                    "SELECT id, raw FROM telegrams WHERE ga = ? AND value IS NULL AND raw != '' LIMIT ?",
+                    (ga, limit - done),
+                ).fetchall()
+            updates = []
+            for row_id, raw in rows:
+                decoded = decode_raw(dpt, raw)
+                if decoded is None:
+                    continue
+                value, unit = decoded
+                updates.append((_text(value), numeric(value), unit, row_id))
+            if updates:
+                with self._lock:
+                    self._db.execute("BEGIN")
+                    self._db.executemany(
+                        "UPDATE telegrams SET value = ?, num = ?, unit = ? WHERE id = ?", updates
+                    )
+                    self._db.execute("COMMIT")
+                done += len(updates)
+            if done >= limit:
+                break
+        if done:
+            log.info("decoded %d recorded telegrams with the project's datapoint types", done)
+        return done
 
     # --- backup ---------------------------------------------------------------------------------
 
