@@ -135,7 +135,15 @@ async def manual(request: Request) -> Any:
     ed = _ed(request)
     d = await ed.worker.run(ed.device, _id(request))
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, resolve_manual, d.get("manufacturer_name"), d.get("order_number"), d.get("product_name"))
+    return await loop.run_in_executor(
+        None,
+        resolve_manual,
+        d.get("manufacturer_name"),
+        d.get("order_number"),
+        d.get("product_name") or d.get("hardware_name"),
+        (d.get("application") or {}).get("name"),
+        d.get("product_ref_id"),
+    )
 
 
 async def preflight(request: Request) -> Any:

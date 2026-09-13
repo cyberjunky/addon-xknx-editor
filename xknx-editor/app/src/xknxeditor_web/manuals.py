@@ -1,9 +1,12 @@
-"""Best-effort lookup of a device's manual: KNX device database first, then a web search.
+"""Best-effort lookup of a device's manual: a web search for the application description or
+technical manual, preferring PDFs on the manufacturer's own site, otherwise the manufacturer
+homepage. What the search uses is whatever the device carries - manufacturer, order number,
+product name, application name, or an order number read out of the product reference - so it
+still works for devices whose catalog data came from a project rather than a product file.
 
-Same strategy as the desktop editor's "Download PDF manual": search www.knx.org for the order
-number or product name and take the manufacturer-uploaded documentation PDF; otherwise search the
-web (DuckDuckGo HTML) for the KNX application description / technical manual, preferring PDFs on
-the manufacturer's own site; otherwise the manufacturer homepage.
+The KNX device database is not queried: its list page ignores the `title` parameter and returns no
+device links, so "open the search instead" would open an empty page. The fallback is a web search
+with the same terms.
 """
 
 from __future__ import annotations
@@ -46,9 +49,28 @@ def domain_for(manufacturer: str | None) -> str | None:
     return next((d for kw, d in MANUFACTURER_DOMAINS.items() if kw in name), None)
 
 
-def knx_search_url(order_number: str | None, manufacturer: str | None = None) -> str:
-    term = (order_number or manufacturer or "").strip()
-    return f"https://www.knx.org/de/gerate?title={urllib.parse.quote_plus(term)}"
+def clean(value: str | None) -> str:
+    """A field the catalog leaves empty shows as "-"; treat that as nothing."""
+    text = (value or "").strip()
+    return "" if text in {"-", "--"} else text
+
+
+def order_from_ref(product_ref: str | None) -> str:
+    """``M-000C_H-6305.2019-1_P-6305.2099`` -> ``6305`` - enough to find the product when the
+    catalog has no order number of its own (product data imported from a project)."""
+    match = re.search(r"_H-([0-9][0-9A-Za-z.\-]*)", clean(product_ref))
+    if not match:
+        return ""
+    return match.group(1).split(".")[0]
+
+
+def search_url(*fields: str | None) -> str:
+    """A web search over the terms a device does have."""
+    terms = [t for t in dict.fromkeys(clean(f) for f in fields) if t]
+    query = " ".join(terms[:4]) or "KNX"
+    if "knx" not in query.lower():
+        query = f"KNX {query}"
+    return f"https://www.google.com/search?q={urllib.parse.quote_plus(query + ' manual')}"
 
 
 def _get(url: str, params: dict[str, str] | None = None) -> str | None:
@@ -61,23 +83,6 @@ def _get(url: str, params: dict[str, str] | None = None) -> str | None:
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         log.debug("doc fetch failed %s: %s", url, exc)
         return None
-
-
-def _knx_pdf(term: str) -> str | None:
-    html = _get("https://www.knx.org/de/gerate", {"title": term})
-    if not html:
-        return None
-    slugs = re.findall(r"/de/gerate/([a-z0-9][a-z0-9-]+)", html)
-    slug = next(iter(dict.fromkeys(slugs)), None)
-    if not slug:
-        return None
-    page = _get(f"https://www.knx.org/de/gerate/{slug}")
-    if not page:
-        return None
-    downloads = re.findall(r"https?://[^\"'> ]*?/devices/[^\"'> ]*?/download", page)
-    if downloads:
-        return next((u for u in downloads if "/de-DE/" in u or "/de/" in u), downloads[0])
-    return next(iter(re.findall(r"https?://[^\"'> ]+\.pdf\b", page, re.I)), None)
 
 
 def _ddg(query: str) -> list[str]:
@@ -112,23 +117,23 @@ def _foreign(url: str, own: str | None) -> bool:
     return any((host == d or host.endswith("." + d)) and d != own for d in MANUFACTURER_DOMAINS.values())
 
 
-def resolve_manual(manufacturer: str | None, order_number: str | None, product_name: str | None = None) -> dict[str, Any]:
-    order = (order_number or "").strip()
-    name = (product_name or "").strip()
-    token = name.split()[0] if name else ""
-    if token and not any(ch.isdigit() for ch in token):
-        token = ""
-    terms = [t for t in dict.fromkeys([order, name, token]) if t]
+def resolve_manual(
+    manufacturer: str | None,
+    order_number: str | None,
+    product_name: str | None = None,
+    application_name: str | None = None,
+    product_ref: str | None = None,
+) -> dict[str, Any]:
+    order = clean(order_number) or order_from_ref(product_ref)
+    name = clean(product_name)
+    application = clean(application_name)
+    search = search_url(manufacturer, order, name, application)
+    keys = [k for k in dict.fromkeys([order, name, application]) if k]
     domain = domain_for(manufacturer)
-    if not terms:
-        return {"url": f"https://{domain}" if domain else None, "source": "manufacturer", "search": knx_search_url(order, manufacturer)}
-    for term in terms:
-        pdf = _knx_pdf(term)
-        if pdf:
-            return {"url": pdf, "source": "knx.org", "search": knx_search_url(order, manufacturer)}
-    mfr = (manufacturer or "").strip()
+    if not keys:
+        return {"url": f"https://{domain}" if domain else None, "source": "manufacturer", "search": search}
+    mfr = clean(manufacturer)
     mfr_word = mfr.split()[0].lower() if mfr else ""
-    keys = [k for k in dict.fromkeys([order, name]) if k]
     best: tuple[int, int, str] | None = None
     fallback: str | None = None
     for suffix in ("Applikationsbeschreibung", "Technisches Handbuch", "manual"):
@@ -147,7 +152,7 @@ def resolve_manual(manufacturer: str | None, order_number: str | None, product_n
         if best is not None and best[0] == 0 and best[1] == 0:
             break
     if best is not None:
-        return {"url": best[2], "source": "web", "search": knx_search_url(order, manufacturer)}
+        return {"url": best[2], "source": "web", "search": search}
     if fallback:
-        return {"url": fallback, "source": "web-page", "search": knx_search_url(order, manufacturer)}
-    return {"url": f"https://{domain}" if domain else None, "source": "manufacturer", "search": knx_search_url(order, manufacturer)}
+        return {"url": fallback, "source": "web-page", "search": search}
+    return {"url": f"https://{domain}" if domain else None, "source": "manufacturer", "search": search}

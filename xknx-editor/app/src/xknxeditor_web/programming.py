@@ -49,11 +49,13 @@ async def explained(xknx: XKNX, address: str) -> AsyncIterator[None]:
         yield
     except ManagementConnectionRefused as exc:
         raise ApiError(
-            f"{address} refused the connection or dropped it ({exc}). A device accepts one "
-            f"management connection at a time: close the device in ETS or any other tool that has "
-            f"it open, and make sure nothing else on the bus uses this editor's address {own} "
-            f"(Gateway settings -> Own individual address). The group monitor does not take the "
-            f"device: it listens on the same tunnel.",
+            f"{address} refused the connection or dropped it ({exc}). Three things cause this: the "
+            f"device does not carry that individual address yet (a new device answers on its "
+            f"default address until it is assigned one - use Assign address with the programming "
+            f"button pressed); another tool has the device open, since it accepts one management "
+            f"connection at a time; or something else on the bus uses this editor's address {own} "
+            f"(Gateway settings -> Own individual address). The group monitor is not the cause: it "
+            f"only listens, on the same tunnel.",
             502,
         ) from exc
     except ManagementConnectionTimeout as exc:

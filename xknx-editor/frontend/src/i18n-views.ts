@@ -389,8 +389,6 @@ export const VIEWS_NL: Record<string, string> = {
     "Nog geen groepsadressen. Maak een hoofdgroep en daarna adressen daarin.",
   "No KNX/IP gateways answered the search":
     "Geen KNX/IP-gateways hebben op de zoekopdracht geantwoord",
-  "No manual found; opened the KNX device search instead":
-    "Geen handleiding gevonden; in plaats daarvan de KNX-apparaatzoeker geopend",
   "No objects. Select a device with product data on the left.":
     "Geen objecten. Kies links een apparaat met productgegevens.",
   "No project open.": "Geen project geopend.",
@@ -523,7 +521,6 @@ export const VIEWS_NL: Record<string, string> = {
   "Add to open project": "Toevoegen aan geopend project",
   "Add pair": "Paar toevoegen",
   "Download CSV": "CSV downloaden",
-  "Download PDF manual": "PDF-handleiding downloaden",
   "Remove from project": "Uit project verwijderen",
   "Fetch product data online": "Productgegevens online ophalen",
   "Open catalog": "Catalogus openen",
@@ -656,6 +653,9 @@ export const VIEWS_NL: Record<string, string> = {
     "Er is geen project open, dus telegrammen worden zonder datapunttype opgenomen en kunnen niet in een grafiek. Open het project: de adressen die het kent worden ontcijferd, ook wat eerder is opgenomen.",
   "These addresses have no datapoint type in the project. Set it in the Group addresses tab and the recorded telegrams are decoded.":
     "Deze adressen hebben geen datapunttype in het project. Stel dat in bij Groepsadressen; daarna worden de opgenomen telegrammen ontcijferd.",
+  "Find manual": "Handleiding zoeken",
+  "No manual found; opened a web search for this device instead":
+    "Geen handleiding gevonden; in plaats daarvan een webzoekopdracht voor dit apparaat geopend",
 };
 
 export const VIEWS_DE: Record<string, string> = {
@@ -1047,8 +1047,6 @@ export const VIEWS_DE: Record<string, string> = {
     "Noch keine Gruppenadressen. Legen Sie eine Hauptgruppe an, dann Adressen darin.",
   "No KNX/IP gateways answered the search":
     "Kein KNX/IP-Gateway hat auf die Suche geantwortet",
-  "No manual found; opened the KNX device search instead":
-    "Kein Handbuch gefunden; stattdessen die KNX-Gerätesuche geöffnet",
   "No objects. Select a device with product data on the left.":
     "Keine Objekte. Wählen Sie links ein Gerät mit Produktdaten.",
   "No project open.": "Kein Projekt geöffnet.",
@@ -1184,7 +1182,6 @@ export const VIEWS_DE: Record<string, string> = {
   "Add to open project": "Zum geöffneten Projekt hinzufügen",
   "Add pair": "Paar hinzufügen",
   "Download CSV": "CSV herunterladen",
-  "Download PDF manual": "PDF-Handbuch laden",
   "Remove from project": "Aus dem Projekt entfernen",
   "Fetch product data online": "Produktdaten online holen",
   "Open catalog": "Katalog öffnen",
@@ -1318,4 +1315,7 @@ export const VIEWS_DE: Record<string, string> = {
     "Es ist kein Projekt geöffnet, daher werden Telegramme ohne Datenpunkttyp aufgezeichnet und lassen sich nicht darstellen. Öffnen Sie das Projekt: Die Adressen, die es kennt, werden entschlüsselt, auch das zuvor Aufgezeichnete.",
   "These addresses have no datapoint type in the project. Set it in the Group addresses tab and the recorded telegrams are decoded.":
     "Diese Adressen haben im Projekt keinen Datenpunkttyp. Setzen Sie ihn unter Gruppenadressen, dann werden die aufgezeichneten Telegramme entschlüsselt.",
+  "Find manual": "Handbuch suchen",
+  "No manual found; opened a web search for this device instead":
+    "Kein Handbuch gefunden; stattdessen wurde eine Websuche für dieses Gerät geöffnet",
 };

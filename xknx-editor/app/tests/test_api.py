@@ -308,3 +308,21 @@ def test_import_project_from_an_upload(client: TestClient, dirs: tuple[Path, Pat
     job = wait_job(client, client.post("/api/project/import", json={"path": str(path)}).json())
     assert job["status"] == "done", job
     assert client.get("/api/project").json()["open"] is True
+
+
+def test_manual_search_uses_what_the_device_has() -> None:
+    """A device whose product data came from a project has no order number; the search still has
+    the application and the product reference to work with."""
+    from xknxeditor_web.manuals import clean, order_from_ref, search_url
+
+    assert clean("-") == "" and clean(" MDT ") == "MDT" and clean(None) == ""
+    assert order_from_ref("M-000C_H-6305.2019-1_P-6305.2099") == "6305"
+    assert order_from_ref("M-0083_H-SCN-IP000.03-2_P-1") == ""  # no leading digit: nothing to take
+    assert order_from_ref(None) == ""
+
+    url = search_url("-", "6305", "-", "Presence / movement or alarm 1332/1.1")
+    assert url.startswith("https://www.google.com/search?q=")
+    assert "6305" in url and "Presence" in url and "KNX" in url and "-" not in url.split("q=")[1]
+    assert search_url(None, None, None, None).endswith("KNX+manual")
+    # A manufacturer that already says KNX is not prefixed again.
+    assert search_url("KNX Association", "1", None, None).count("KNX") == 1

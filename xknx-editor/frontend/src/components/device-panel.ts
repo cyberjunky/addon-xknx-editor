@@ -279,6 +279,10 @@ export class DevicePanel extends LitElement {
   @state() private paramFilter = "";
   @state() private scope = "full";
   @state() private busy: string | null = null;
+  // Documents for this device: the panel shows the list open when there is something in it,
+  // unless the user folded it away (`docsOpen` stays null until they touch it).
+  @state() private docCount = 0;
+  @state() private docsOpen: boolean | null = null;
   @state() private progress: { value: number | null; stage: string } | null =
     null;
   @state() private overview: Overview | null = null;
@@ -491,7 +495,7 @@ export class DevicePanel extends LitElement {
       window.open(url, "_blank", "noopener");
       if (!r.url)
         store.say(
-          tr("No manual found; opened the KNX device search instead"),
+          tr("No manual found; opened a web search for this device instead"),
           "primary",
         );
     });
@@ -639,18 +643,27 @@ export class DevicePanel extends LitElement {
               : nothing
           }
         </table>
-        <details style="margin-top:10px">
+        <details
+          style="margin-top:10px"
+          ?open=${this.docsOpen ?? this.docCount > 0}
+          @toggle=${(e: Event) => (this.docsOpen = (e.target as HTMLDetailsElement).open)}
+        >
           <summary style="cursor:pointer;color:var(--ha-text-2)">
-            ${tr("Documents")} — ${d.order_number || d.name}
+            ${tr("Documents")} —
+            ${d.order_number || d.name}${this.docCount ? ` (${this.docCount})` : ""}
           </summary>
-          <xknx-docs-view compact tag=${d.order_number || ""}></xknx-docs-view>
+          <xknx-docs-view
+            compact
+            tag=${d.order_number || ""}
+            @docs-count=${(e: CustomEvent<{ count: number }>) => (this.docCount = e.detail.count)}
+          ></xknx-docs-view>
         </details>
         <div class="row">
           <sl-button
             size="small"
             ?loading=${this.busy === "manual"}
             @click=${this.manual}
-            >${icon("download", 14)} ${tr("Download PDF manual")}</sl-button
+            >${icon("search", 14)} ${tr("Find manual")}</sl-button
           >
           <sl-button
             size="small"

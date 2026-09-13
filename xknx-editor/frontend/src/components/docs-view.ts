@@ -114,6 +114,14 @@ export class DocsView extends LitElement {
     try {
       const q = this.tag ? `?tag=${encodeURIComponent(this.tag)}` : "";
       this.docs = (await api.get<{ items: Doc[] }>(`api/docs${q}`)).items;
+      // The device panel folds the list open when there is something in it.
+      this.dispatchEvent(
+        new CustomEvent("docs-count", {
+          detail: { count: this.docs.length },
+          bubbles: true,
+          composed: true,
+        }),
+      );
     } catch (e) {
       store.say(e instanceof ApiError ? e.message : String(e), "danger");
     }

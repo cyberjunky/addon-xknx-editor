@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- "Download PDF manual" is now "Find manual" and searches the web with whatever the device
+  carries - manufacturer, order number, product, application, or an order number read out of
+  the product reference. The KNX device database is no longer queried: its list page ignores the
+  search term, so the fallback used to open an empty page.
+- A device's documents are folded open when it has any, with their number next to the heading.
 - A refused or timed-out management connection explains itself (another tool holding the device,
   or two clients sharing one individual address) instead of reporting
   `ManagementConnectionRefused`, and the gateway menu shows the address the editor sends from.
