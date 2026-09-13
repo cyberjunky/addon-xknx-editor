@@ -496,17 +496,24 @@ export class DevicePanel extends LitElement {
     if (!text || !co) return;
     const [main, middle, sub] = text.split("/").map(Number);
     this.linkFor = null;
-    await this.act(async () => {
-      const ga = await api.post<GroupAddress>("api/group-addresses", {
-        address: (main << 11) | (middle << 8) | sub,
-        name: co.name,
-      });
-      await api.post(`api/devices/${this.deviceId}/com-objects/link`, {
-        ref_id: co.ref_id,
-        group_address_id: ga.id,
-        sending,
-      });
-    }, `Created ${text} and linked it`);
+    const dpt = co.dpt_codes[0] ?? null;
+    await this.act(
+      async () => {
+        const ga = await api.post<GroupAddress>("api/group-addresses", {
+          address: (main << 11) | (middle << 8) | sub,
+          name: co.name,
+          // The object's own datapoint type, the way a commissioning tool proposes it: without one
+          // the monitor can only guess what the telegrams mean.
+          datapoint_type: dpt,
+        });
+        await api.post(`api/devices/${this.deviceId}/com-objects/link`, {
+          ref_id: co.ref_id,
+          group_address_id: ga.id,
+          sending,
+        });
+      },
+      `Created ${text}${dpt ? ` (${dpt})` : ""} and linked it`,
+    );
   }
 
   private link(sending: boolean): void {
@@ -517,15 +524,23 @@ export class DevicePanel extends LitElement {
       return;
     }
     const id = this.linkPick;
+    const picked = this.gas.find((g) => g.id === id);
+    const dpt = co.dpt_codes[0] ?? null;
+    // An address nobody typed yet takes the object's datapoint type; one that already has a type
+    // keeps it, since the project may mean something else by it.
+    const adopt = !!dpt && !!picked && !picked.datapoint_type;
     this.linkFor = null;
     void this.act(
-      () =>
-        api.post(`api/devices/${this.deviceId}/com-objects/link`, {
+      async () => {
+        await api.post(`api/devices/${this.deviceId}/com-objects/link`, {
           ref_id: co.ref_id,
           group_address_id: id,
           sending,
-        }),
-      "Linked",
+        });
+        if (adopt)
+          await api.patch(`api/group-addresses/${id}`, { datapoint_type: dpt });
+      },
+      adopt ? `Linked, and ${picked!.text} took the object's ${dpt}` : "Linked",
     );
   }
 

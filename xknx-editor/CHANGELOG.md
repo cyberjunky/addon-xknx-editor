@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.5 (2026-09-13)
+
+- Linking a group object gives the address its datapoint type: a newly created address is typed
+  from the object, and an existing address without a type takes the object's. Without a type the
+  monitor can only guess what a telegram means.
+- Which devices cannot be programmed is now read from the master data's management model (BCU 1,
+  BCU 2, BIM M112 drive their load state machine through memory) instead of a hand-written list of
+  masks.
+
 ## 0.3.4 (2026-09-13)
 
 - Searching the group addresses matches the names of the groups themselves, not only of single

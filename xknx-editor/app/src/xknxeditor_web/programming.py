@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -152,12 +153,18 @@ class ProgrammingError(RuntimeError):
     pass
 
 
-# Mask versions whose Load State Machine is memory mapped (Realisation Type 0): the BCU 1 and
-# BCU 2 families, and the TP-UART/BIM derivatives that share their resource layout. The download
-# engine writes load events to PID_LOAD_STATE_CONTROL instead, which these devices do not have.
-MEMORY_MAPPED_MASKS = {
-    "0010", "0011", "0012", "0013", "0020", "0021", "0025", "0030", "0090", "00C0",
+# How a mask version's load state machine is driven, from knx_master.xml's ManagementModel. The
+# download engine writes load events to PID_LOAD_STATE_CONTROL (SystemB, PropertyBased); the other
+# models drive the state machine through memory, which it does not implement.
+MEMORY_MAPPED_MODELS = {"Bcu1", "Bcu2", "BimM112"}
+_MODEL_NAMES = {"Bcu1": "BCU 1", "Bcu2": "BCU 2", "BimM112": "BIM M112"}
+# Used when the master data is not at hand; the grouping is knx_master.xml's own (2026-09).
+_FALLBACK_MODELS = {
+    "Bcu1": ("0010", "0011", "0012", "0013", "0900", "0910", "0911", "0912", "091A", "1011", "1012", "1013"),
+    "Bcu2": ("0020", "0021", "0025"),
+    "BimM112": ("0700", "0701", "0705", "1900", "2705", "5705"),
 }
+_MASK_MODEL = re.compile(rb'<MaskVersion Id="MV-([0-9A-Fa-f]+)"[^>]*ManagementModel="([A-Za-z0-9]+)"')
 
 
 def mask_of(application: Any) -> str:
@@ -166,17 +173,33 @@ def mask_of(application: Any) -> str:
     return raw.removeprefix("MV-").upper()
 
 
-def unsupported_mask(application: Any) -> str:
+def management_model(mask: str, master: bytes | None = None) -> str:
+    """The mask version's management model, from the master data when it is available."""
+    if not mask:
+        return ""
+    if master:
+        for found, model in _MASK_MODEL.findall(master):
+            if found.decode().upper() == mask:
+                return model.decode()
+    for model, masks in _FALLBACK_MODELS.items():
+        if mask in masks:
+            return model
+    return ""
+
+
+def unsupported_mask(application: Any, master: bytes | None = None) -> str:
     """A sentence naming why this device cannot be programmed here, or "" when it can."""
     mask = mask_of(application)
-    if mask not in MEMORY_MAPPED_MASKS:
+    model = management_model(mask, master)
+    if model not in MEMORY_MAPPED_MODELS:
         return ""
+    name = _MODEL_NAMES.get(model, model)
     return (
-        f"This device is one of the early BCU models (mask {mask}). Its load procedure is memory "
-        f"mapped, while the editor's download engine drives the load state machine through device "
-        f"properties (System B and newer); the memory-mapped variant is not implemented, so the "
-        f"device answers every load step with a rejection. Reading the device, the group monitor "
-        f"and the project itself work as usual - the download does not. Program this one from ETS."
+        f"This device is a {name} (mask {mask}). Its load state machine is driven through memory, "
+        f"while the editor's download engine drives the property-based one (System B and newer): "
+        f"every load step comes back rejected. The memory-mapped variant is not implemented. "
+        f"Reading the device, assigning its address, the group monitor and the project itself work "
+        f"as usual - only the download does not, so program this one from ETS."
     )
 
 
@@ -205,7 +228,7 @@ def prepare(editor: Editor, device_id: int, keyring: dict[str, Any] | None = Non
         raise ProgrammingError("The device has no individual address")
     if view._dyn is None:  # noqa: SLF001
         raise ProgrammingError("The application has no dynamic section to program")
-    refusal = unsupported_mask(view.app)
+    refusal = unsupported_mask(view.app, _master_bytes(editor))
     if refusal:
         raise ApiError(refusal, 501)
     group_communication = None
@@ -270,6 +293,19 @@ def memory_preview(editor: Editor, device_id: int) -> dict[str, Any]:
             }
         )
     return {"segments": segments}
+
+
+def _master_bytes(editor: Editor) -> bytes | None:
+    """The raw knx_master.xml, for the few checks that only need to look something up in it."""
+    from xknxeditor_web.dpts import DptCatalog
+
+    try:
+        cat = getattr(editor, "_dpt_catalog", None) or DptCatalog(editor.settings.config_dir)
+        editor._dpt_catalog = cat  # noqa: SLF001
+        return cat.master_bytes()
+    except Exception as exc:  # noqa: BLE001 - the fallback table covers the known masks
+        log.info("master data unavailable for the mask check: %s", exc)
+        return None
 
 
 def master_for(editor: Editor) -> Any | None:

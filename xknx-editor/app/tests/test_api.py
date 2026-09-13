@@ -374,18 +374,25 @@ def test_project_import_takes_its_product_data_into_the_catalog(client: TestClie
     assert devices and all(d["resolved"] for d in devices)
 
 
-def test_early_bcu_devices_are_refused_before_the_bus() -> None:
-    """Mask 0021 is a BCU2: its load state machine is memory mapped, which the engine does not
-    drive, so the device would reject every load step (seen on a Merten 6305, 2026-09-13)."""
+def test_memory_mapped_devices_are_refused_before_the_bus() -> None:
+    """A BCU 2 (mask 0021) drives its load state machine through memory, which the engine does not
+    do, so every load step comes back rejected (seen on a Merten 6305, 2026-09-13). The grouping
+    comes from the master data's ManagementModel, with a table to fall back on."""
     from types import SimpleNamespace
 
-    from xknxeditor_web.programming import mask_of, unsupported_mask
+    from xknxeditor_web.programming import management_model, mask_of, unsupported_mask
 
-    bcu2 = SimpleNamespace(program=SimpleNamespace(mask_version="MV-0021"))
-    system_b = SimpleNamespace(program=SimpleNamespace(mask_version="MV-07B0"))
-    assert mask_of(bcu2) == "0021" and mask_of(system_b) == "07B0"
-    assert mask_of(SimpleNamespace(program=None)) == ""
-    refusal = unsupported_mask(bcu2)
-    assert "mask 0021" in refusal and "ETS" in refusal and "memory mapped" in refusal
-    assert unsupported_mask(system_b) == ""
+    def app(mask: str) -> SimpleNamespace:
+        return SimpleNamespace(program=SimpleNamespace(mask_version=mask))
+
+    assert mask_of(app("MV-0021")) == "0021" and mask_of(SimpleNamespace(program=None)) == ""
+    master = b'<MaskVersion Id="MV-0021" MaskVersion="33" Name="2.1" ManagementModel="Bcu2" />'              b'<MaskVersion Id="MV-07B0" Name="7.0" ManagementModel="SystemB" />'
+    assert management_model("0021", master) == "Bcu2"
+    assert management_model("07B0", master) == "SystemB"
+    assert management_model("07B0") == ""  # not in the fallback table: only the unsupported ones are
+    assert management_model("0701") == "BimM112" and management_model("091A") == "Bcu1"
+    refusal = unsupported_mask(app("MV-0021"), master)
+    assert "BCU 2" in refusal and "mask 0021" in refusal and "ETS" in refusal
+    assert unsupported_mask(app("MV-07B0"), master) == ""
+    assert unsupported_mask(app("MV-0701")) != ""  # falls back to the table without master data
     assert unsupported_mask(SimpleNamespace(program=None)) == ""
