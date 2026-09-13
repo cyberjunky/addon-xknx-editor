@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased (2026-09-12)
+## Unreleased (2026-09-13)
+
+- `repository.yaml` at the root, so the repository can be added to the Home Assistant add-on
+  store by URL.
+
+### 2026-09-12
 
 - Round-the-clock telegram recording to `/config/telegrams.db` (on by default, retention by age
   and count, settings in the group monitor's Archive mode), with auto-connect retrying a gateway
