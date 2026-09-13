@@ -326,3 +326,24 @@ def test_manual_search_uses_what_the_device_has() -> None:
     assert search_url(None, None, None, None).endswith("KNX+manual")
     # A manufacturer that already says KNX is not prefixed again.
     assert search_url("KNX Association", "1", None, None).count("KNX") == 1
+
+
+def test_refusal_message_names_an_address_clash() -> None:
+    """A device dropping the connection usually means two things share one individual address."""
+    from xknxeditor_web.programming import refusal_message
+
+    clash = refusal_message("1.1.1", "1.1.2", "Dimmer (1.1.2)", "")
+    assert "1.1.2" in clash and "Dimmer (1.1.2)" in clash and "Own individual address" in clash
+    plain = refusal_message("1.1.1", "1.1.2", "", "peer disconnected")
+    assert "peer disconnected" in plain and "one management connection at a time" in plain
+    assert "group monitor is not the cause" in plain
+
+
+def test_device_on_address(client: TestClient, dirs: tuple[Path, Path]) -> None:
+    _, share = dirs
+    wait_job(client, client.post("/api/project/import", json={"path": str(share / KNXPROJ.name)}).json())
+    devices = client.get("/api/project/devices").json()["items"]
+    one = next(d for d in devices if d["individual_address"])
+    editor = client.app.state.editor
+    assert editor.device_on_address(one["individual_address"]) in (one["name"], one["product_name"])
+    assert editor.device_on_address("15.15.254") == "" and editor.device_on_address("") == ""

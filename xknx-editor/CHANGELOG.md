@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.4 (2026-09-13)
+
+- The group monitor reads a payload whose address has no datapoint type: the payload length leaves
+  one likely reading, shown greyed and in italics (`≈ 38`, `14.xxx`) so it is never mistaken for
+  the project's own value.
+- A dropped management connection names the likely cause when it can: if the address the editor
+  sends from belongs to a device in the project, the message says so. Connecting warns about the
+  same clash right away instead of waiting for the first download.
+
 ## 0.2.3 (2026-09-13)
 
 - Messages at the bottom right have a close button, and an error stays until it is closed instead

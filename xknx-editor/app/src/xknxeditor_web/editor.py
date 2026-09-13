@@ -635,6 +635,16 @@ class Editor:
             "parts": parts,
         }
 
+    def device_on_address(self, address: str) -> str:
+        """The name of the project device with this individual address, or "". Used to explain a
+        dropped management connection: the editor must not send from an address a device holds."""
+        if self.pid is None or not address:
+            return ""
+        for row in self.devices():
+            if row["individual_address"] == address:
+                return row["name"] or row["product_name"] or address
+        return ""
+
     def devices(self) -> list[dict[str, Any]]:
         pid = self._pid()
         out: list[dict[str, Any]] = []

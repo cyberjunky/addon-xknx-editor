@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -41,23 +41,40 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+def refusal_message(address: str, own: str, clash: str, detail: str) -> str:
+    """What to tell the user when a device drops the management connection."""
+    because = f" ({detail})" if detail else ""
+    if clash:
+        return (
+            f"{address} dropped the connection{because}. The editor sends from {own}, which is "
+            f"also {clash} in this project: two things on one individual address break the "
+            f"point-to-point exchange, and the device disconnects. Give the editor a free address "
+            f"under Gateway settings -> Own individual address (or reserve the tunnel addresses in "
+            f"the gateway itself) and try again."
+        )
+    return (
+        f"{address} refused the connection or dropped it{because}. Three things cause this: "
+        f"something else on the bus uses this editor's address {own} - another tunnel (Home "
+        f"Assistant's KNX integration takes one too) or a real device - which is set under Gateway "
+        f"settings -> Own individual address; another tool has the device open, since it accepts "
+        f"one management connection at a time; or the device does not carry {address} yet and "
+        f"still answers on its default address, so assign it first with the programming button "
+        f"pressed. The group monitor is not the cause: it only listens, on the same tunnel."
+    )
+
+
 @contextlib.asynccontextmanager
-async def explained(xknx: XKNX, address: str) -> AsyncIterator[None]:
-    """Turn xknx's management errors into something a KNX installer can act on."""
+async def explained(
+    xknx: XKNX, address: str, clash: Callable[[str], Awaitable[str]] | None = None
+) -> AsyncIterator[None]:
+    """Turn xknx's management errors into something a KNX installer can act on. ``clash`` is asked
+    - only when something failed - whether the editor's own address belongs to a project device."""
     own = str(xknx.current_address)
     try:
         yield
     except ManagementConnectionRefused as exc:
-        raise ApiError(
-            f"{address} refused the connection or dropped it ({exc}). Three things cause this: the "
-            f"device does not carry that individual address yet (a new device answers on its "
-            f"default address until it is assigned one - use Assign address with the programming "
-            f"button pressed); another tool has the device open, since it accepts one management "
-            f"connection at a time; or something else on the bus uses this editor's address {own} "
-            f"(Gateway settings -> Own individual address). The group monitor is not the cause: it "
-            f"only listens, on the same tunnel.",
-            502,
-        ) from exc
+        found = await clash(own) if clash is not None else ""
+        raise ApiError(refusal_message(address, own, found, str(exc)), 502) from exc
     except ManagementConnectionTimeout as exc:
         raise ApiError(
             f"{address} did not answer in time ({exc}). Check that the device is powered and "

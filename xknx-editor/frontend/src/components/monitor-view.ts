@@ -32,6 +32,42 @@ export function dptMatches(
   return short.startsWith(f);
 }
 
+/** A reading of a payload whose address has no datapoint type in the project. KNX types are
+ * bound to a payload length, so the length leaves one likely candidate and a couple of others;
+ * the table shows this greyed and in italics, never as the project's truth. */
+export function guessValue(raw: string): { text: string; dpt: string } | null {
+  const hex = raw.replace(/\s+/g, "");
+  if (!hex || hex.length % 2 || /[^0-9a-fA-F]/.test(hex)) return null;
+  const bytes = hex.match(/../g)!.map((b) => parseInt(b, 16));
+  if (bytes.length === 1) {
+    const v = bytes[0];
+    if (v <= 1) return { text: v ? "on" : "off", dpt: "1.xxx" };
+    return { text: `${v} · ${Math.round((v / 255) * 100)} %`, dpt: "5.xxx" };
+  }
+  if (bytes.length === 2) {
+    // DPT 9: 0.01 · M · 2^E, M an 11-bit two's complement mantissa.
+    const word = (bytes[0] << 8) | bytes[1];
+    const exp = (word & 0x7800) >> 11;
+    let mant = word & 0x07ff;
+    if (word & 0x8000) mant = -(~(mant - 1) & 0x07ff);
+    const value = 0.01 * mant * 2 ** exp;
+    return { text: round(value), dpt: "9.xxx" };
+  }
+  if (bytes.length === 4) {
+    const view = new DataView(new Uint8Array(bytes).buffer);
+    const value = view.getFloat32(0);
+    if (Number.isFinite(value) && (value === 0 || Math.abs(value) >= 1e-6))
+      return { text: round(value), dpt: "14.xxx" };
+    return { text: String(view.getInt32(0)), dpt: "13.xxx" };
+  }
+  return null;
+}
+
+function round(v: number): string {
+  const text = Math.abs(v) >= 1000 ? v.toFixed(0) : v.toFixed(2);
+  return text.replace(/\.?0+$/, "");
+}
+
 /** The address filter: "1/2/" is a prefix (a middle group), "1/2/3" an exact address. */
 export function addressMatches(filter: string, destination: string): boolean {
   const f = filter.trim();
@@ -170,6 +206,10 @@ export class MonitorView extends LitElement {
     }
     .apci {
       color: var(--ha-success);
+    }
+    .guess {
+      color: var(--ha-text-2);
+      font-style: italic;
     }
     .empty {
       padding: 16px;
@@ -423,13 +463,21 @@ export class MonitorView extends LitElement {
   private renderValue(t: TelegramRecord, projectOpen: boolean) {
     if (t.value !== null && t.value !== undefined)
       return html`${String(t.value)}${t.unit ? html` <span class="muted">${t.unit}</span>` : nothing}`;
-    if (t.destination_kind === "group" && projectOpen && !t.destination_dpt)
+    if (t.destination_kind !== "group" || t.destination_dpt) return "";
+    const guess = guessValue(t.raw);
+    if (guess)
       return html`<span
-        class="muted"
-        title=${tr("This group address has no datapoint type in the project")}
-        >${tr("no DPT")}</span
+        class="guess"
+        title=${tr("Read from the payload length, not from the project. Set the datapoint type of this address to see the real value.")}
+        >≈ ${guess.text}</span
       >`;
-    return "";
+    return projectOpen
+      ? html`<span
+          class="muted"
+          title=${tr("This group address has no datapoint type in the project")}
+          >${tr("no DPT")}</span
+        >`
+      : "";
   }
 
   private renderRows(items: TelegramRecord[], withDate: boolean) {
@@ -456,7 +504,7 @@ export class MonitorView extends LitElement {
             <td class="apci">${t.apci}</td>
             <td>${this.renderValue(t, projectOpen)}</td>
             <td class="muted">
-              ${t.destination_dpt ? dptShort(t.destination_dpt) : ""}
+              ${t.destination_dpt ? dptShort(t.destination_dpt) : t.destination_kind === "group" ? html`<span class="guess">${guessValue(t.raw)?.dpt ?? ""}</span>` : ""}
             </td>
             <td class="addr muted">${t.raw}</td>
             <td class="act">

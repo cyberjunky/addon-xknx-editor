@@ -219,14 +219,24 @@ export class GatewayMenu extends LitElement {
     ).catch(() => undefined);
   }
 
+  /** Connect, and pass on a warning the server adds (the tunnel address clashing with a device
+   * in the project makes every later download fail). */
+  private async connect(): Promise<void> {
+    const r = await api.post<{ address_warning?: string }>(
+      "api/bus/connect",
+      {},
+    );
+    if (r?.address_warning)
+      window.setTimeout(() => store.say(r.address_warning!, "danger"), 400);
+  }
+
   private onMenu(e: CustomEvent<{ item: HTMLElement }>): void {
     const v = e.detail.item.getAttribute("value") ?? "";
     if (v === "scan") void this.scan();
     else if (v === "connect")
-      void this.act(
-        () => api.post("api/bus/connect", {}),
-        "Connected to the bus",
-      ).catch(() => undefined);
+      void this.act(() => this.connect(), "Connected to the bus").catch(
+        () => undefined,
+      );
     else if (v === "disconnect")
       void this.act(
         () => api.post("api/bus/disconnect", {}),

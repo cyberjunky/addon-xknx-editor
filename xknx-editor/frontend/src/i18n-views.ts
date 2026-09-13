@@ -659,6 +659,8 @@ export const VIEWS_NL: Record<string, string> = {
   "Remove device from project": "Apparaat uit project verwijderen",
   "from the project? Its parameters and links are removed with it; the bus device is not touched.":
     "uit het project verwijderen? De parameters en koppelingen gaan mee; het apparaat op de bus blijft ongemoeid.",
+  "Read from the payload length, not from the project. Set the datapoint type of this address to see the real value.":
+    "Afgeleid uit de lengte van de payload, niet uit het project. Stel het datapunttype van dit adres in voor de echte waarde.",
 };
 
 export const VIEWS_DE: Record<string, string> = {
@@ -1324,4 +1326,6 @@ export const VIEWS_DE: Record<string, string> = {
   "Remove device from project": "Gerät aus dem Projekt entfernen",
   "from the project? Its parameters and links are removed with it; the bus device is not touched.":
     "aus dem Projekt entfernen? Parameter und Verknüpfungen gehen mit; das Gerät am Bus bleibt unberührt.",
+  "Read from the payload length, not from the project. Set the datapoint type of this address to see the real value.":
+    "Aus der Länge der Nutzdaten abgeleitet, nicht aus dem Projekt. Setzen Sie den Datenpunkttyp dieser Adresse für den echten Wert.",
 };

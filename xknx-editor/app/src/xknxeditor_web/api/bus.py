@@ -59,6 +59,17 @@ async def connect(request: Request) -> Any:
     result = await bus.connect()
     if result["state"] != "CONNECTED":
         raise ApiError(result.get("error") or "Connection failed", 502)
+    # The gateway hands out the tunnel's individual address. If a device in the project holds it,
+    # every point-to-point exchange is at risk, so say it now rather than at the first download.
+    own = result.get("own_address") or ""
+    ed = request.app.state.editor
+    clash = await ed.worker.run(ed.device_on_address, own) if own else ""
+    if clash:
+        result["address_warning"] = (
+            f"The gateway gave this editor the address {own}, which {clash} in this project also "
+            f"uses. Programming and reading devices will fail until the editor gets a free address "
+            f"(Gateway settings -> Own individual address)."
+        )
     return result
 
 
