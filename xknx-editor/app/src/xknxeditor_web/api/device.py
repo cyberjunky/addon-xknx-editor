@@ -185,10 +185,10 @@ async def preflight(request: Request) -> Any:
     device_id = _id(request)
 
     async def run(job: Job) -> Any:
-        jobs.report(job, None, "building image")
+        jobs.report(job, None, "preparing the download")
         prepared = await ed.worker.run(prog.prepare, ed, device_id, _keyring(request))
         master = await ed.worker.run(prog.master_for, ed)
-        jobs.report(job, None, "reading device")
+        jobs.report(job, None, "reading the device")
         async with prog.explained(xknx, prepared.address, _clash(request)):
             return await prog.run_preflight(xknx, prepared, scope, master)
 
@@ -206,13 +206,15 @@ async def program(request: Request) -> Any:
     device_id = _id(request)
 
     async def run(job: Job) -> Any:
-        jobs.report(job, None, "building image")
+        jobs.report(job, None, "preparing the download")
         prepared = await ed.worker.run(prog.prepare, ed, device_id, _keyring(request))
         master = await ed.worker.run(prog.master_for, ed)
         jobs.report(job, 0.0, "programming")
 
         def progress(done: int, total: int) -> None:
-            jobs.report(job, done / total if total else None, f"load control {done}/{total}")
+            # "Load control" is the name of the procedure in the KNX spec, not something to
+            # report at: what the user watches is how far the download has got.
+            jobs.report(job, done / total if total else None, f"writing to the device, step {done} of {total}")
 
         async def download() -> None:
             async with prog.explained(xknx, prepared.address, _clash(request)):

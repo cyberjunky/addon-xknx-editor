@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 (2026-09-13)
+
+- Programming reports its progress in plain words ("writing to the device, step 3 of 12") instead
+  of the KNX procedure's own name ("load control 3/12").
+
 ## 0.3.0 (2026-09-13)
 
 - Linking a group object: the address picker is a search box over address and name instead of a
