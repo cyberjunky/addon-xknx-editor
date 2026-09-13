@@ -9,6 +9,23 @@ export class ParameterTree extends LitElement {
     :host {
       display: block;
     }
+    sl-tab-group.pages {
+      --sl-spacing-medium: 10px;
+    }
+    /* Long page names wrap instead of stretching the list across half the editor. */
+    sl-tab-group.pages sl-tab::part(base) {
+      white-space: normal;
+      text-align: left;
+      padding: 6px 10px;
+      line-height: 1.3;
+    }
+    sl-tab-group.pages::part(nav) {
+      max-width: 260px;
+      overflow-y: auto;
+    }
+    sl-tab-group.pages::part(body) {
+      padding-top: 0;
+    }
     .block {
       margin: 8px 0 12px;
       padding: 8px 12px;
@@ -79,8 +96,10 @@ export class ParameterTree extends LitElement {
       UiNode,
       { type: "tab" }
     >[];
+    // The parameter pages go down the side, the way a commissioning tool lists them: a product
+    // with twenty pages is unusable as a row of tabs, and the page itself then has the width.
     if (tabs.length > 1 && tabs.length === this.nodes.length) {
-      return html`<sl-tab-group>
+      return html`<sl-tab-group placement="start" class="pages">
         ${tabs.map((t, i) => html`<sl-tab slot="nav" panel="t${i}">${t.text || `Tab ${i + 1}`}</sl-tab>`)}
         ${tabs.map((t, i) => html`<sl-tab-panel name="t${i}">${t.children.map((c) => this.node(c))}</sl-tab-panel>`)}
       </sl-tab-group>`;

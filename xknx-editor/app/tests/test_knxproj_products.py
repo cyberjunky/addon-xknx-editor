@@ -136,3 +136,34 @@ def test_upload_of_a_project_takes_the_same_route(client: TestClient, dirs: tupl
     job = wait_job(client, r.json())
     assert job["status"] == "done", job
     assert job["result"]["applications_added"] == [APPLICATION]
+
+
+def test_one_unreadable_manufacturer_does_not_cost_the_others(client: TestClient, dirs: tuple[Path, Path], monkeypatch) -> None:
+    """A project bundles one folder per manufacturer; if the catalog chokes on one of them the
+    rest must still land, with the failure named."""
+    _, share = dirs
+    editor = client.app.state.editor
+    real = editor.catalog.import_knxprod
+    calls = {"n": 0}
+
+    def flaky(blob: bytes):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ValueError("unsupported schema")
+        return real(blob)
+
+    monkeypatch.setattr(editor.catalog, "import_knxprod", flaky)
+    monkeypatch.setattr(
+        "xknxeditor_web.editor.product_archives",
+        lambda path: [("M-BAD", b"x"), *[(mid, blob) for mid, blob in _archives(share)]],
+    )
+    result = editor.import_project_products(share / KNXPROJ.name)
+    assert result["failed"] and "M-BAD" in result["failed"][0]
+    assert result["stored"], "the readable manufacturer still went in"
+    assert result["applications_added"]
+
+
+def _archives(share: Path):
+    from xknxeditor_web.knxproj_products import product_archives
+
+    return product_archives(share / KNXPROJ.name)

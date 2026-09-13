@@ -97,7 +97,7 @@ def timeout_message(address: str, own: str, in_programming: list[str], detail: s
     )
 
 
-def verification_message(address: str, detail: str) -> str:
+def verification_message(address: str, detail: str, note: str = "") -> str:
     """A device answering "no" to a step of the load procedure. The property the download writes
     to put an object into Load state is the usual one: not every device accepts a partial load."""
     if "property 5" in detail and "0 elements" in detail:
@@ -106,18 +106,21 @@ def verification_message(address: str, detail: str) -> str:
             f"write to its load-state control, which a partial download needs. Try Download: full "
             f"instead - it loads the object from scratch, which such devices do accept - and check "
             f"that the application in the project is the one the device runs (Read from device "
-            f"shows what it carries)."
+            f"shows what it carries).{note}"
         )
     return (
         f"{address} answered unexpectedly during the download ({detail}). Run Test before "
         f"programming to see what the device reports, and check that the application in the "
-        f"project matches the one the device runs."
+        f"project matches the one the device runs.{note}"
     )
 
 
 @contextlib.asynccontextmanager
 async def explained(
-    xknx: XKNX, address: str, clash: Callable[[str], Awaitable[str]] | None = None
+    xknx: XKNX,
+    address: str,
+    clash: Callable[[str], Awaitable[str]] | None = None,
+    note: str = "",
 ) -> AsyncIterator[None]:
     """Turn xknx's management errors into something a KNX installer can act on. ``clash`` is asked
     - only when something failed - whether the editor's own address belongs to a project device."""
@@ -132,7 +135,7 @@ async def explained(
     except ManagementConnectionError as exc:
         raise ApiError(f"Management connection to {address} failed: {exc}", 502) from exc
     except VerificationError as exc:
-        raise ApiError(verification_message(address, str(exc)), 502) from exc
+        raise ApiError(verification_message(address, str(exc), note), 502) from exc
 
 SCOPES = {s.value: s for s in DownloadScope}
 
@@ -187,19 +190,20 @@ def management_model(mask: str, master: bytes | None = None) -> str:
     return ""
 
 
-def unsupported_mask(application: Any, master: bytes | None = None) -> str:
-    """A sentence naming why this device cannot be programmed here, or "" when it can."""
+def memory_mapped_note(application: Any, master: bytes | None = None) -> str:
+    """A sentence about this device's management model, for when a load step is rejected. Not a
+    refusal: commissioning such a device does work, it is a later step that can fail."""
     mask = mask_of(application)
     model = management_model(mask, master)
     if model not in MEMORY_MAPPED_MODELS:
         return ""
     name = _MODEL_NAMES.get(model, model)
     return (
-        f"This device is a {name} (mask {mask}). Its load state machine is driven through memory, "
-        f"while the editor's download engine drives the property-based one (System B and newer): "
-        f"every load step comes back rejected. The memory-mapped variant is not implemented. "
-        f"Reading the device, assigning its address, the group monitor and the project itself work "
-        f"as usual - only the download does not, so program this one from ETS."
+        f" This device is a {name} (mask {mask}), whose load state machine is driven through "
+        f"memory rather than through device properties; the download engine handles the memory "
+        f"part but writes load events as properties, which such a device rejects. If the first "
+        f"commissioning went through, program the whole application again (Download: full) rather "
+        f"than a partial download, or use ETS for this device."
     )
 
 
@@ -228,9 +232,6 @@ def prepare(editor: Editor, device_id: int, keyring: dict[str, Any] | None = Non
         raise ProgrammingError("The device has no individual address")
     if view._dyn is None:  # noqa: SLF001
         raise ProgrammingError("The application has no dynamic section to program")
-    refusal = unsupported_mask(view.app, _master_bytes(editor))
-    if refusal:
-        raise ApiError(refusal, 501)
     group_communication = None
     if with_groups:
         raw = parse_ia(ia)

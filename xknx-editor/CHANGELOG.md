@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.6 (2026-09-13)
+
+- Fix 0.3.3/0.3.5: BCU 1, BCU 2 and BIM M112 devices are no longer refused. Commissioning one of
+  them does work; the management model is now only named in the failure when a load step is
+  actually rejected.
+- The parameter pages of a device stand in a list down the side instead of a row of tabs, so a
+  product with many pages needs no scrolling to reach them.
+- Product data is taken out of a project one manufacturer at a time: an archive the catalog cannot
+  read no longer costs the others, and the import result names the one that failed.
+
 ## 0.3.5 (2026-09-13)
 
 - Linking a group object gives the address its datapoint type: a newly created address is typed

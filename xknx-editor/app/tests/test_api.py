@@ -374,13 +374,13 @@ def test_project_import_takes_its_product_data_into_the_catalog(client: TestClie
     assert devices and all(d["resolved"] for d in devices)
 
 
-def test_memory_mapped_devices_are_refused_before_the_bus() -> None:
-    """A BCU 2 (mask 0021) drives its load state machine through memory, which the engine does not
-    do, so every load step comes back rejected (seen on a Merten 6305, 2026-09-13). The grouping
-    comes from the master data's ManagementModel, with a table to fall back on."""
+def test_memory_mapped_devices_are_named_in_a_failure() -> None:
+    """A BCU 2 (mask 0021) drives its load state machine through memory. Commissioning one does
+    work, so this is a note added to a failure, never a refusal to try (Ron, 2026-09-13). The
+    grouping comes from the master data's ManagementModel, with a table to fall back on."""
     from types import SimpleNamespace
 
-    from xknxeditor_web.programming import management_model, mask_of, unsupported_mask
+    from xknxeditor_web.programming import management_model, mask_of, memory_mapped_note, verification_message
 
     def app(mask: str) -> SimpleNamespace:
         return SimpleNamespace(program=SimpleNamespace(mask_version=mask))
@@ -391,8 +391,10 @@ def test_memory_mapped_devices_are_refused_before_the_bus() -> None:
     assert management_model("07B0", master) == "SystemB"
     assert management_model("07B0") == ""  # not in the fallback table: only the unsupported ones are
     assert management_model("0701") == "BimM112" and management_model("091A") == "Bcu1"
-    refusal = unsupported_mask(app("MV-0021"), master)
-    assert "BCU 2" in refusal and "mask 0021" in refusal and "ETS" in refusal
-    assert unsupported_mask(app("MV-07B0"), master) == ""
-    assert unsupported_mask(app("MV-0701")) != ""  # falls back to the table without master data
-    assert unsupported_mask(SimpleNamespace(program=None)) == ""
+    note = memory_mapped_note(app("MV-0021"), master)
+    assert "BCU 2" in note and "mask 0021" in note
+    assert memory_mapped_note(app("MV-07B0"), master) == ""
+    assert memory_mapped_note(app("MV-0701")) != ""  # falls back to the table without master data
+    assert memory_mapped_note(SimpleNamespace(program=None)) == ""
+    # The note rides along with the failure it explains.
+    assert note in verification_message("1.1.19", "device rejected property write", note)

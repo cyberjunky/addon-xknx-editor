@@ -59,10 +59,10 @@ The last open project is reopened when the add-on restarts.
   `/config/signing_key.json` only.
 
 > [!NOTE]
-> Programming needs a device whose load state machine is property based (mask 07B0 / System B and
-> the later masks). The early BCU models (masks 0010-0025) drive it through memory instead; that
-> variant is not implemented, and such a device is refused before anything is written. Everything
-> else - reading it, the monitor, the project - works.
+> The download engine writes load events as device properties (System B and the later masks). The
+> BCU 1, BCU 2 and BIM M112 masks drive their load state machine through memory instead:
+> commissioning such a device works, but a later download can come back rejected. The failure says
+> so, with the mask and the management model.
 
 ## Recording, archive, charts, statistics, network
 

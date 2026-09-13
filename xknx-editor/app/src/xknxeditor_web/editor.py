@@ -1395,12 +1395,24 @@ class Editor:
             raise ApiError(str(exc)) from exc
         if not archives:
             raise ApiError(f"{path.name} bundles no manufacturer product data")
-        stored = [str(self.catalog.import_knxprod(blob)) for _mid, blob in archives]
+        # Per manufacturer: one archive the catalog cannot read must not cost the others, and the
+        # caller is told which one it was instead of silently ending up with fewer products.
+        stored: list[str] = []
+        failed: list[str] = []
+        for mid, blob in archives:
+            try:
+                stored.append(str(self.catalog.import_knxprod(blob)))
+            except Exception as exc:  # noqa: BLE001 - reported, the rest still goes in
+                failed.append(f"{mid}: {type(exc).__name__}: {exc}")
+                log.warning("product data of %s in %s could not be imported: %s", mid, path.name, exc)
         after = {a.application_id for a in self.catalog.list_applications()}
         self.invalidate_catalog()
+        if failed and not stored:
+            raise ApiError(f"No product data could be imported from {path.name}: {failed[0]}")
         return {
             "stored": stored,
             "manufacturers": [mid for mid, _blob in archives],
+            "failed": failed,
             "applications_added": sorted(after - before),
         }
 
