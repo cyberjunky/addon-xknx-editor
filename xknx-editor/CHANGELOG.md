@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.5 (2026-09-13)
+
+- Assign individual address waits for the programming button: the dialog reports how many devices
+  are in programming mode and only lets the address be written when exactly one is (or when a
+  serial number is given, which needs no button).
+
 ## 0.2.4 (2026-09-13)
 
 - The group monitor reads a payload whose address has no datapoint type: the payload length leaves

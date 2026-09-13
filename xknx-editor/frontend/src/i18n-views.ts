@@ -661,6 +661,15 @@ export const VIEWS_NL: Record<string, string> = {
     "uit het project verwijderen? De parameters en koppelingen gaan mee; het apparaat op de bus blijft ongemoeid.",
   "Read from the payload length, not from the project. Set the datapoint type of this address to see the real value.":
     "Afgeleid uit de lengte van de payload, niet uit het project. Stel het datapunttype van dit adres in voor de echte waarde.",
+  "Looking for a device in programming mode…":
+    "Zoeken naar een apparaat in programmeermodus…",
+  "One device is in programming mode": "Eén apparaat staat in programmeermodus",
+  "Assign writes the address into it.": "Toewijzen schrijft het adres daarin.",
+  "devices are in programming mode": "apparaten staan in programmeermodus",
+  "Leave exactly one, or give a serial number.":
+    "Laat er precies één over, of geef een serienummer op.",
+  "Waiting: press the programming button on the device (its LED lights up). Nothing is written until one device answers.":
+    "Wachten: druk op de programmeerknop van het apparaat (de LED gaat branden). Er wordt niets geschreven tot één apparaat antwoordt.",
 };
 
 export const VIEWS_DE: Record<string, string> = {
@@ -1328,4 +1337,13 @@ export const VIEWS_DE: Record<string, string> = {
     "aus dem Projekt entfernen? Parameter und Verknüpfungen gehen mit; das Gerät am Bus bleibt unberührt.",
   "Read from the payload length, not from the project. Set the datapoint type of this address to see the real value.":
     "Aus der Länge der Nutzdaten abgeleitet, nicht aus dem Projekt. Setzen Sie den Datenpunkttyp dieser Adresse für den echten Wert.",
+  "Looking for a device in programming mode…":
+    "Suche nach einem Gerät im Programmiermodus…",
+  "One device is in programming mode": "Ein Gerät ist im Programmiermodus",
+  "Assign writes the address into it.": "Zuweisen schreibt die Adresse hinein.",
+  "devices are in programming mode": "Geräte sind im Programmiermodus",
+  "Leave exactly one, or give a serial number.":
+    "Lassen Sie genau eines übrig oder geben Sie eine Seriennummer an.",
+  "Waiting: press the programming button on the device (its LED lights up). Nothing is written until one device answers.":
+    "Warten: Drücken Sie die Programmiertaste am Gerät (die LED leuchtet). Es wird nichts geschrieben, bis ein Gerät antwortet.",
 };

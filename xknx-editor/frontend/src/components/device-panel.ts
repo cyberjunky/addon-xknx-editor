@@ -290,6 +290,11 @@ export class DevicePanel extends LitElement {
   @state() private memory: Memory | null = null;
   @state() private confirmProgram = false;
   @state() private assignDialog = false;
+  // Devices currently in programming mode, polled while the assign dialog is open: assigning by
+  // programming button needs exactly one, and waiting for the press beats failing on the bus.
+  @state() private inProgramming: string[] | null = null;
+  @state() private assignSerial = "";
+  private programmingPoll: number | undefined;
   @state() private addressError = "";
   private unsubscribe = () => {};
   private loaded = { id: -1, rev: -1 };
@@ -304,7 +309,30 @@ export class DevicePanel extends LitElement {
 
   disconnectedCallback(): void {
     this.unsubscribe();
+    this.watchProgramming(false);
     super.disconnectedCallback();
+  }
+
+  /** Poll for devices in programming mode while the assign dialog is open. */
+  private watchProgramming(on: boolean): void {
+    window.clearInterval(this.programmingPoll);
+    this.programmingPoll = undefined;
+    if (!on) {
+      this.inProgramming = null;
+      return;
+    }
+    const read = async () => {
+      try {
+        const r = await api.get<{ items: string[] }>(
+          "api/bus/programming-mode",
+        );
+        this.inProgramming = r.items;
+      } catch {
+        this.inProgramming = [];
+      }
+    };
+    void read();
+    this.programmingPoll = window.setInterval(read, 3000);
   }
 
   updated(changed: Map<string, unknown>): void {
@@ -711,7 +739,11 @@ export class DevicePanel extends LitElement {
             size="small"
             ?disabled=${!connected || !d.individual_address || this.busy !== null}
             ?loading=${this.busy === "assign"}
-            @click=${() => (this.assignDialog = true)}
+            @click=${() => {
+              this.assignSerial = "";
+              this.assignDialog = true;
+              this.watchProgramming(true);
+            }}
             >${tr("Assign address")}</sl-button
           >
         </sl-tooltip>
@@ -983,13 +1015,40 @@ ${this.hexDiff(s.current, s.planned, s.address)}</pre>`,
     </sl-dialog>`;
   }
 
+  /** What the bus says about programming mode, while the dialog waits for a button press. */
+  private renderProgrammingState() {
+    const found = this.inProgramming;
+    if (found === null)
+      return html`<p class="hint">
+        ${tr("Looking for a device in programming mode…")}
+      </p>`;
+    if (found.length === 1)
+      return html`<p class="hint" style="color:var(--ha-success)">
+        ${tr("One device is in programming mode")} (${found[0]}).
+        ${tr("Assign writes the address into it.")}
+      </p>`;
+    if (found.length > 1)
+      return html`<p class="hint" style="color:var(--ha-warning)">
+        ${found.length} ${tr("devices are in programming mode")}
+        (${found.join(", ")}).
+        ${tr("Leave exactly one, or give a serial number.")}
+      </p>`;
+    return html`<p class="hint">
+      <sl-spinner style="font-size:12px;vertical-align:-1px"></sl-spinner>
+      ${tr("Waiting: press the programming button on the device (its LED lights up). Nothing is written until one device answers.")}
+    </p>`;
+  }
+
   private renderProgramDialog() {
     const d = this.device;
     const scope = SCOPES.find(([v]) => v === this.scope)?.[1] ?? this.scope;
     return html`<sl-dialog
         label=${tr("Assign individual address")}
         ?open=${this.assignDialog}
-        @sl-after-hide=${() => (this.assignDialog = false)}
+        @sl-after-hide=${() => {
+          this.assignDialog = false;
+          this.watchProgramming(false);
+        }}
       >
         <p class="hint">
           ${tr("Writes")}
@@ -1001,7 +1060,10 @@ ${this.hexDiff(s.current, s.planned, s.address)}</pre>`,
           size="small"
           label=${tr("Serial number (optional)")}
           placeholder="001234 56789A"
+          .value=${this.assignSerial}
+          @sl-input=${(e: Event) => (this.assignSerial = (e.target as HTMLInputElement).value.trim())}
         ></sl-input>
+        ${this.assignSerial ? nothing : this.renderProgrammingState()}
         <sl-button slot="footer" @click=${() => (this.assignDialog = false)}
           >${tr("Cancel")}</sl-button
         >
@@ -1009,14 +1071,11 @@ ${this.hexDiff(s.current, s.planned, s.address)}</pre>`,
           slot="footer"
           variant="primary"
           ?loading=${this.busy === "assign"}
+          ?disabled=${!this.assignSerial && (this.inProgramming?.length ?? 0) !== 1}
           @click=${() => {
-            const serial =
-              (
-                this.renderRoot.querySelector(
-                  "#assign-serial",
-                ) as HTMLInputElement | null
-              )?.value.trim() ?? "";
+            const serial = this.assignSerial;
             this.assignDialog = false;
+            this.watchProgramming(false);
             void this.busAction("assign", async () => {
               const r = await api.post<{ address: string; by_serial: boolean }>(
                 `api/devices/${this.deviceId}/assign-address`,
