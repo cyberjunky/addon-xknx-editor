@@ -5,12 +5,12 @@
 # repository to the add-on store, or place this folder on the /addons share for a local build. The
 # `image:` line is added once images are published.
 #
-# `version: dev` is required here by the Home Assistant add-on linter; the release version lives
-# in the git tag (v0.1.0), CHANGELOG.md and the app package, and is stamped into this file when
-# an image is published. A copy on the /addons share is stamped `dev-<git sha>` by
-# tools/deploy-local.ps1 so the Supervisor notices each redeploy.
+# `version` is what the Supervisor compares against the installed add-on: raise it in the same
+# commit as the CHANGELOG entry and tag that commit `v<version>`, or nobody can update. A copy on
+# the /addons share is stamped `dev-<git sha>` by tools/deploy-local.ps1 instead, so the
+# Supervisor notices each redeploy of a local build.
 name: XKNX Editor
-version: dev
+version: 0.2.0
 slug: xknx_editor
 description: Web-based KNX project editor built on xknx. Experimental.
 url: https://github.com/cyberjunky/addon-xknx-editor

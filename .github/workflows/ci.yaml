@@ -28,7 +28,10 @@ jobs:
       - name: Run add-on linter
         uses: frenck/action-addon-linter@b9cfd1bc62ba60d2c4fc96317b5f7ada5923f4a7 # v2.21.1
         with:
-          community: true
+          # `community: true` additionally demands `version: dev`, the hassio-addons
+          # organisation's convention. This repository is installed straight from git, where the
+          # Supervisor compares the version in config.yaml to decide whether an update exists.
+          community: false
           path: ./xknx-editor
 
   lint-hadolint:

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (2026-09-13)
+## 0.2.0 (2026-09-13)
 
 - Picking a gateway from the list connects to it at once, and the gateway bubble says
   "· not connected" / "· connecting…" / "· reconnecting…" next to a chosen gateway instead of
@@ -13,8 +13,6 @@
 - The image builds from a plain git clone as well: the Dockerfile takes the vendored editor
   sources from `vendor/xknx-editor/` when the packed tarball is absent (an install from the add-on
   store failed on the missing tarball).
-
-### 2026-09-12
 
 - Round-the-clock telegram recording to `/config/telegrams.db` (on by default, retention by age
   and count, settings in the group monitor's Archive mode), with auto-connect retrying a gateway

@@ -7,8 +7,8 @@
   to \\<host>\addons\addon-xknx-editor\xknx-editor (repository folder with the add-on folder
   inside, the layout the add-on store uses) without the vendored directory itself, and stamps
   config.yaml
-  with "version: dev-<short git sha>" so the Supervisor sees every redeploy as an update (the
-  committed file keeps "version: dev", the community add-on convention).
+  with "version: dev-<short git sha>" so the Supervisor sees every redeploy as an update. The
+  committed file keeps the released version; it is what the add-on store compares against.
 
   Afterwards: Settings -> Add-ons -> Add-on store -> (menu) Check for updates, then
   Update or Rebuild "XKNX Editor (dev)" under Local add-ons.

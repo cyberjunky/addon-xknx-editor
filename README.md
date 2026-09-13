@@ -59,6 +59,16 @@ folder on the `/addons` share.
 
 User documentation for the add-on itself is in [xknx-editor/DOCS.md](xknx-editor/DOCS.md).
 
+## Installing from the add-on store
+
+1. Settings → Add-ons → Add-on Store → ⋮ → **Repositories**, add
+   `https://github.com/cyberjunky/addon-xknx-editor`.
+2. Open **XKNX Editor** in the new section and **Install**. No images are published yet, so the
+   Supervisor builds the add-on on the host (a few minutes; `aarch64` and `amd64`).
+3. Later versions arrive the usual way: ⋮ → _Check for updates_, then **Update** on the add-on
+   page. The Supervisor compares `version` in `xknx-editor/config.yaml` with the installed one,
+   so every release raises it and is tagged `v<version>`.
+
 ## Installing (local build)
 
 1. Copy the `xknx-editor/` folder into your Home Assistant `addons` share as
