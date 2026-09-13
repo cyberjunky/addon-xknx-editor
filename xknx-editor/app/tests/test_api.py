@@ -293,3 +293,18 @@ def test_picker_offers_share_only_but_config_paths_still_resolve(client: TestCli
     # An explicit /config path is still resolvable, it is just not browsed to from the top.
     assert client.get("/api/files/browse", params={"path": str(config)}).status_code == 200
     assert client.get("/api/files/browse", params={"path": "/etc"}).status_code == 400
+
+
+def test_import_project_from_an_upload(client: TestClient, dirs: tuple[Path, Path]) -> None:
+    """The browser sends the .knxproj; it lands under /config/imports and imports like a share file."""
+    config, share = dirs
+    content = (share / "xknx_test_project_no_password.knxproj").read_bytes()
+    r = client.put("/api/project/upload?name=../My House.knxproj", content=content)
+    assert r.status_code == 200, r.text
+    path = Path(r.json()["path"])
+    assert path == config / "imports" / "My House.knxproj" and path.is_file()
+    assert client.put("/api/project/upload?name=notes.txt", content=content).status_code == 400
+    assert client.put("/api/project/upload?name=x.knxproj", content=b"hello").status_code == 400
+    job = wait_job(client, client.post("/api/project/import", json={"path": str(path)}).json())
+    assert job["status"] == "done", job
+    assert client.get("/api/project").json()["open"] is True

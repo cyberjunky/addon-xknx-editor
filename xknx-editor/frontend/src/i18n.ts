@@ -31,6 +31,13 @@ const NL: Record<string, string> = {
   Connect: "Verbinden",
   Disconnect: "Verbinding verbreken",
   "Group monitor": "Groepsmonitor",
+  "Import project from /share": "Project importeren vanaf /share",
+  "Pick the .knxproj export on this computer; it is sent to the add-on and imported. Password-protected exports are fine, the password is asked next.":
+    "Kies de .knxproj-export op deze computer; die wordt naar de add-on gestuurd en geïmporteerd. Exports met wachtwoord kunnen ook, het wachtwoord wordt hierna gevraagd.",
+  "Choose a .knxproj on this computer…": "Kies een .knxproj op deze computer…",
+  "Or take one that is already on the Home Assistant share:":
+    "Of neem er een die al op de Home Assistant-share staat:",
+  "Pick a file on /share…": "Bestand op /share kiezen…",
   Charts: "Grafieken",
   Statistics: "Statistieken",
   Network: "Netwerk",
@@ -95,6 +102,14 @@ const DE: Record<string, string> = {
   Connect: "Verbinden",
   Disconnect: "Trennen",
   "Group monitor": "Gruppenmonitor",
+  "Import project from /share": "Projekt von /share importieren",
+  "Pick the .knxproj export on this computer; it is sent to the add-on and imported. Password-protected exports are fine, the password is asked next.":
+    "Wählen Sie den .knxproj-Export auf diesem Computer; er wird an das Add-on gesendet und importiert. Passwortgeschützte Exporte gehen auch, das Passwort wird als Nächstes abgefragt.",
+  "Choose a .knxproj on this computer…":
+    "Eine .knxproj auf diesem Computer wählen…",
+  "Or take one that is already on the Home Assistant share:":
+    "Oder eine nehmen, die schon auf der Home-Assistant-Freigabe liegt:",
+  "Pick a file on /share…": "Datei auf /share wählen…",
   Charts: "Diagramme",
   Statistics: "Statistik",
   Network: "Netzwerk",

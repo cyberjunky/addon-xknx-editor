@@ -2,6 +2,9 @@
 
 ## Unreleased (2026-09-13)
 
+- Import project takes the `.knxproj` from this computer (uploaded to `/config/imports`, then
+  imported like before, password step included); picking a file on `/share` stays as the second
+  option.
 - `repository.yaml` at the root, so the repository can be added to the Home Assistant add-on
   store by URL.
 - The image builds from a plain git clone as well: the Dockerfile takes the vendored editor

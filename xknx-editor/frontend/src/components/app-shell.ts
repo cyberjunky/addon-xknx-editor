@@ -216,6 +216,7 @@ export class AppShell extends LitElement {
     | "new"
     | "import"
     | "import-password"
+    | "import-share"
     | "save-copy"
     | "backup"
     | "restore"
@@ -254,6 +255,7 @@ export class AppShell extends LitElement {
     mcp?: { enabled: boolean; port: number | null; tools: string[] };
   } | null = null;
   @state() private importPath = "";
+  @state() private uploading = false;
   @state() private restoreBrowse = false;
   @state() private backupResult: { path: string; bytes: number } | null = null;
   @state() private busy: string | null = null;
@@ -271,6 +273,30 @@ export class AppShell extends LitElement {
           ) as HTMLInputElement | null
         )?.checked,
     ).map((c) => c.id);
+  }
+
+  /** Send the chosen .knxproj to the add-on, then continue with the password step. */
+  private async uploadProject(e: Event): Promise<void> {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+    this.uploading = true;
+    try {
+      const res = await fetch(
+        `api/project/upload?name=${encodeURIComponent(file.name)}`,
+        { method: "PUT", body: file },
+      );
+      const body = (await res.json()) as { path?: string; error?: string };
+      if (!res.ok || !body.path)
+        throw new ApiError(res.status, body.error ?? res.statusText);
+      this.importPath = body.path;
+      this.dialog = "import-password";
+    } catch (err) {
+      store.say(err instanceof ApiError ? err.message : String(err), "danger");
+    } finally {
+      this.uploading = false;
+    }
   }
 
   private savePos(key: "left" | "right" | "bottom", e: Event): void {
@@ -722,13 +748,42 @@ export class AppShell extends LitElement {
         @sl-after-hide=${() => this.dialog === "open" && (this.dialog = null)}
       ></xknx-file-dialog>
       <xknx-file-dialog
-        label=${tr("Import project")}
+        label=${tr("Import project from /share")}
         ext=".knxproj"
         confirmLabel="Next"
-        ?open=${this.dialog === "import"}
+        ?open=${this.dialog === "import-share"}
         @file-chosen=${chosen("import")}
-        @sl-after-hide=${() => this.dialog === "import" && (this.dialog = null)}
+        @sl-after-hide=${() => this.dialog === "import-share" && (this.dialog = null)}
       ></xknx-file-dialog>
+      <sl-dialog
+        label=${tr("Import project")}
+        ?open=${this.dialog === "import"}
+        @sl-after-hide=${() => this.dialog === "import" && (this.dialog = null)}
+      >
+        <p class="hint" style="margin-top:0">
+          ${tr("Pick the .knxproj export on this computer; it is sent to the add-on and imported. Password-protected exports are fine, the password is asked next.")}
+        </p>
+        <input
+          id="import-file"
+          type="file"
+          accept=".knxproj"
+          hidden
+          @change=${(e: Event) => this.uploadProject(e)}
+        />
+        <sl-button
+          variant="primary"
+          ?loading=${this.uploading}
+          @click=${() => (this.renderRoot.querySelector("#import-file") as HTMLInputElement).click()}
+          >${icon("upload", 14)}
+          ${tr("Choose a .knxproj on this computer…")}</sl-button
+        >
+        <div class="hint" style="margin-top:12px">
+          ${tr("Or take one that is already on the Home Assistant share:")}
+          <sl-button size="small" @click=${() => (this.dialog = "import-share")}
+            >${tr("Pick a file on /share…")}</sl-button
+          >
+        </div>
+      </sl-dialog>
       <sl-dialog
         label=${tr("New project")}
         ?open=${this.dialog === "new"}

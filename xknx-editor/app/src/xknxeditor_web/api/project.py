@@ -149,6 +149,32 @@ async def import_project(request: Request) -> Any:
     return jobs.submit("import-knxproj", run, path=path).to_dict()
 
 
+MAX_PROJECT_UPLOAD = 200 * 1024 * 1024
+
+
+async def upload_project(request: Request) -> Any:
+    """Receive a .knxproj from the browser (raw body) into /config/imports and hand back the path
+    the import route takes, so the password step and the job stay the same as for a file on /share."""
+    settings = request.app.state.settings
+    length = int(request.headers.get("content-length") or 0)
+    if length > MAX_PROJECT_UPLOAD:
+        raise ApiError("File too large", 413)
+    content = await request.body()
+    if not content:
+        raise ApiError("Empty upload")
+    name = request.query_params.get("name", "project.knxproj")
+    safe = "".join(c for c in Path(name).name if c.isalnum() or c in "._- ").strip() or "project.knxproj"
+    if not safe.lower().endswith(".knxproj"):
+        raise ApiError("Pick a .knxproj export")
+    if not content.startswith(b"PK"):
+        raise ApiError("This is not a .knxproj file (not a zip archive)")
+    folder = settings.config_dir / "imports"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / safe
+    path.write_bytes(content)
+    return {"path": str(path), "name": safe, "bytes": len(content)}
+
+
 async def topology(request: Request) -> Any:
     ed = _ed(request)
     return await ed.worker.run(ed.topology, query_int(request, "installation", 0))
@@ -260,6 +286,7 @@ def routes() -> list[Route]:
         route("/api/project/recent/forget", forget_recent, ["POST"]),
         route("/api/project/export", export_project, ["POST"]),
         route("/api/project/import", import_project, ["POST"]),
+        route("/api/project/upload", upload_project, ["PUT", "POST"]),
         route("/api/project/topology", topology),
         route("/api/project/devices", devices),
         route("/api/project/network", network),
