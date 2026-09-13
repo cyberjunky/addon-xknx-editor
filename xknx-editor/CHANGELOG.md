@@ -4,6 +4,9 @@
 
 - `repository.yaml` at the root, so the repository can be added to the Home Assistant add-on
   store by URL.
+- The image builds from a plain git clone as well: the Dockerfile takes the vendored editor
+  sources from `vendor/xknx-editor/` when the packed tarball is absent (an install from the add-on
+  store failed on the missing tarball).
 
 ### 2026-09-12
 

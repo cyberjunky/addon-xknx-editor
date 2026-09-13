@@ -41,17 +41,23 @@ COPY --from=uv /uv /bin/uv
 RUN apk add --no-cache build-base libffi-dev
 
 # The editor sources are vendored in this repository (vendor/xknx-editor, snapshot recorded in
-# vendor/UPSTREAM_COMMIT, changes in vendor/patches/); nothing is fetched from the upstream repository. The
-# build context carries them as ONE tarball (vendor/xknx-editor.tar.gz, produced by
-# tools/pack-vendor.ps1 and the CI workflows) because copying ~3800 small files to the Home
-# Assistant addons share takes far longer than the build itself.
-COPY vendor/xknx-editor.tar.gz /tmp/xknx-editor.tar.gz
-COPY vendor/UPSTREAM_COMMIT /tmp/UPSTREAM_COMMIT
-COPY vendor/wheels /wheels-vendor
-RUN mkdir -p /src \
-    && tar -xzf /tmp/xknx-editor.tar.gz -C /src --strip-components=1 \
-    && mv /tmp/UPSTREAM_COMMIT /src/UPSTREAM_COMMIT \
-    && rm /tmp/xknx-editor.tar.gz
+# vendor/UPSTREAM_COMMIT, changes in vendor/patches/); nothing is fetched from the upstream
+# repository. The build context carries them either as the directory itself (a git clone: the
+# add-on store installs this way) or as ONE tarball (vendor/xknx-editor.tar.gz, produced by
+# tools/pack-vendor.ps1 and the CI workflows, because copying ~3800 small files to the Home
+# Assistant addons share takes far longer than the build itself). The tarball wins when both exist.
+COPY vendor/ /tmp/vendor/
+RUN mkdir -p /src /wheels-vendor \
+    && if [ -f /tmp/vendor/xknx-editor.tar.gz ]; then \
+         tar -xzf /tmp/vendor/xknx-editor.tar.gz -C /src --strip-components=1; \
+       elif [ -d /tmp/vendor/xknx-editor/packages ]; then \
+         cp -a /tmp/vendor/xknx-editor/. /src/; \
+       else \
+         echo "vendor/xknx-editor is missing from the build context" >&2; exit 1; \
+       fi \
+    && cp /tmp/vendor/UPSTREAM_COMMIT /src/UPSTREAM_COMMIT \
+    && cp -a /tmp/vendor/wheels/. /wheels-vendor/ \
+    && rm -rf /tmp/vendor
 
 ENV UV_PYTHON_DOWNLOADS=never \
     UV_LINK_MODE=copy \
