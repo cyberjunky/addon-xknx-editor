@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.7 (2026-09-13)
+
+- When nothing answers at a device's address, the add-on looks for a device in programming mode
+  and says so: an address changed in the project is not in the device until Assign address writes
+  it there.
+
 ## 0.2.6 (2026-09-13)
 
 - A duplicate individual address is now proven rather than suggested: telegrams that arrive FROM

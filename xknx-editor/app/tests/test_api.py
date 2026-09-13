@@ -347,3 +347,13 @@ def test_device_on_address(client: TestClient, dirs: tuple[Path, Path]) -> None:
     editor = client.app.state.editor
     assert editor.device_on_address(one["individual_address"]) in (one["name"], one["product_name"])
     assert editor.device_on_address("15.15.254") == "" and editor.device_on_address("") == ""
+
+
+def test_timeout_message_points_at_the_device_in_programming_mode() -> None:
+    from xknxeditor_web.programming import timeout_message
+
+    waiting = timeout_message("1.1.19", "1.1.2", ["15.15.255"], "No ACK received")
+    assert "15.15.255" in waiting and "Assign address" in waiting
+    assert "does not change the device" in waiting and "No ACK received" in waiting
+    alone = timeout_message("1.1.19", "1.1.2", [], "")
+    assert "programming button" in alone and "coupler" in alone and "1.1.2" in alone

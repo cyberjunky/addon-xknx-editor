@@ -62,6 +62,38 @@ def refusal_message(address: str, own: str, clash: str, detail: str) -> str:
     )
 
 
+async def _in_programming(xknx: XKNX) -> list[str]:
+    """Who is in programming mode right now - asked only after a timeout, to tell an unassigned
+    device apart from an unreachable one."""
+    try:
+        return await programming_mode_devices(xknx)
+    except Exception:  # noqa: BLE001 - a diagnosis must not replace the original failure
+        return []
+
+
+def timeout_message(address: str, own: str, in_programming: list[str], detail: str) -> str:
+    """What to tell the user when nothing answers at an address."""
+    because = f" ({detail})" if detail else ""
+    lead = (
+        f"Nothing answered at {address}{because}. No device on the bus carries that address at the "
+        f"moment."
+    )
+    if in_programming:
+        found = ", ".join(in_programming)
+        return (
+            f"{lead} One device is in programming mode, answering on {found}: if that is this "
+            f"device, write the address into it first with Assign address - changing the address "
+            f"in the project does not change the device. Otherwise check that the device is "
+            f"powered and that couplers pass point-to-point telegrams; the editor sends from {own}."
+        )
+    return (
+        f"{lead} Either the device carries a different address than the project says - press its "
+        f"programming button and use Assign address to write {address} into it - or it is off, "
+        f"unreachable, or behind a coupler that does not pass point-to-point telegrams. The editor "
+        f"sends from {own}."
+    )
+
+
 @contextlib.asynccontextmanager
 async def explained(
     xknx: XKNX, address: str, clash: Callable[[str], Awaitable[str]] | None = None
@@ -75,12 +107,7 @@ async def explained(
         found = await clash(own) if clash is not None else ""
         raise ApiError(refusal_message(address, own, found, str(exc)), 502) from exc
     except ManagementConnectionTimeout as exc:
-        raise ApiError(
-            f"{address} did not answer in time ({exc}). Check that the device is powered and "
-            f"reachable from this line: couplers must let point-to-point telegrams through, and "
-            f"the editor sends from {own}.",
-            504,
-        ) from exc
+        raise ApiError(timeout_message(address, own, await _in_programming(xknx), str(exc)), 504) from exc
     except ManagementConnectionError as exc:
         raise ApiError(f"Management connection to {address} failed: {exc}", 502) from exc
 
