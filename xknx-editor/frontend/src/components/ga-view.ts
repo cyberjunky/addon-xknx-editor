@@ -213,6 +213,25 @@ export class GaView extends LitElement {
     );
   }
 
+  /** A group's own name (and its address) counts as a match: a search for "besch" usually means
+   * the middle group called Beschattung, and then everything in it is what was wanted. */
+  private rangeNameMatches(r: GroupRange, depth: number): boolean {
+    const q = this.filter.trim().toLowerCase();
+    return (
+      !!q && `${this.rangeLabel(r, depth)} ${r.name}`.toLowerCase().includes(q)
+    );
+  }
+
+  /** Whether a group is worth showing at all while filtering. */
+  private rangeHasMatch(r: GroupRange, depth: number): boolean {
+    if (!this.filter.trim()) return true;
+    return (
+      this.rangeNameMatches(r, depth) ||
+      r.group_addresses.some((g) => this.matchesFilter(g)) ||
+      r.children.some((c) => this.rangeHasMatch(c, depth + 1))
+    );
+  }
+
   private rangeLabel(r: GroupRange, depth: number): string {
     if (this.gaStyle === "Free") return `${r.range_start}–${r.range_end}`;
     const main = r.range_start >> 11;
@@ -238,7 +257,11 @@ export class GaView extends LitElement {
   }
 
   private range(r: GroupRange, depth: number): TemplateResult {
-    const gas = r.group_addresses.filter((g) => this.matchesFilter(g));
+    // A group matched by its own name shows everything in it; otherwise only the addresses that
+    // match themselves.
+    const gas = this.rangeNameMatches(r, depth)
+      ? r.group_addresses
+      : r.group_addresses.filter((g) => this.matchesFilter(g));
     const open = !this.collapsed.has(r.id) || this.filter.trim() !== "";
     const canHaveMiddle = depth === 0 && this.gaStyle === "ThreeLevel";
     return html`
@@ -300,7 +323,7 @@ export class GaView extends LitElement {
       ${
         open
           ? html`<div class="children">
-              ${r.children.map((c) => this.range(c, depth + 1))}
+              ${r.children.filter((c) => this.rangeHasMatch(c, depth + 1)).map((c) => this.range(c, depth + 1))}
               ${gas.map(
                 (g) =>
                   html`<div
@@ -313,9 +336,12 @@ export class GaView extends LitElement {
                   </div>`,
               )}
               ${
-                !r.children.length && !gas.length
+                !r.children.length && !gas.length && !this.filter.trim()
                   ? html`<div class="emptyfolder">
-                      ${this.filter ? "no match" : html`empty · <a @click=${() => this.openCreate(r, depth)}>${tr("add an address")}</a>`}
+                      empty ·
+                      <a @click=${() => this.openCreate(r, depth)}
+                        >${tr("add an address")}</a
+                      >
                     </div>`
                   : nothing
               }
@@ -358,7 +384,7 @@ export class GaView extends LitElement {
               : nothing
           }
         </div>
-        ${this.ranges.map((r) => this.range(r, 0))}
+        ${this.ranges.filter((r) => this.rangeHasMatch(r, 0)).map((r) => this.range(r, 0))}
         ${
           this.loose.length
             ? html`<div class="node folder">

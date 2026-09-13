@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.4 (2026-09-13)
+
+- Searching the group addresses matches the names of the groups themselves, not only of single
+  addresses: a search for a middle group shows that group with everything in it, and groups
+  without a match are left out instead of filling the tree with "no match".
+
 ## 0.3.3 (2026-09-13)
 
 - A device from the early BCU families (masks 0010-0025) is refused before anything is written,
