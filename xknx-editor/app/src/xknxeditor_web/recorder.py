@@ -274,6 +274,22 @@ class TelegramRecorder:
 
     # --- reading -------------------------------------------------------------------------------
 
+    def addresses(self, since: float, until: float, limit: int = 500) -> list[dict[str, Any]]:
+        """Group addresses seen in the recording, busiest first, with how many of their telegrams
+        carry a number. Lets the charts offer what the bus actually sends, project or no project."""
+        self.flush()
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT ga, destination, count(*), sum(num IS NOT NULL), max(unit)"
+                " FROM telegrams WHERE ga IS NOT NULL AND ts BETWEEN ? AND ?"
+                " GROUP BY ga ORDER BY count(*) DESC LIMIT ?",
+                (since, until, limit),
+            ).fetchall()
+        return [
+            {"ga": r[0], "destination": r[1], "count": r[2], "numeric": int(r[3] or 0), "unit": r[4]}
+            for r in rows
+        ]
+
     def incoming_from(self, address: str, since: float) -> int:
         """Telegrams that ARRIVED from ``address`` since ``since``. Asked about the editor's own
         individual address: anything the bus sends from it is somebody else on that address."""

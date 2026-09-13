@@ -36,6 +36,26 @@ type SeriesResponse = {
 const COLORS = ["#03a9f4", "#ff9800", "#43a047", "#9c27b0"];
 const MAX_SERIES = 4;
 
+/** A group address the recorder has seen. */
+type Recorded = {
+  ga: number;
+  destination: string;
+  count: number;
+  numeric: number;
+  unit: string | null;
+  name: string;
+  dpt: string | null;
+};
+
+/** What the picker offers: the project's addresses and the recorded ones, merged. */
+type Candidate = {
+  text: string;
+  name: string;
+  dpt: string | null;
+  count: number;
+  numeric: boolean;
+};
+
 function fmt(v: number | null | undefined): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return "–";
   return Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2).replace(/\.?0+$/, "");
@@ -171,6 +191,9 @@ export class ChartsView extends LitElement {
   @state() private showMatches = false;
   @state() private loading = false;
   private gas: GroupAddress[] = [];
+  // What the recorder has seen: the picker offers these too, so an address the project does not
+  // know - or a session with no project at all - can still be charted.
+  @state() private recorded: Recorded[] = [];
   private gasRevision = -1;
   private plot: uPlot | null = null;
   private resize: ResizeObserver | null = null;
@@ -182,6 +205,7 @@ export class ChartsView extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this.unsubscribe = store.subscribe(() => this.onStore());
+    void this.loadRecorded();
     void this.loadGas();
     this.onStore();
     this.scheme = window.matchMedia("(prefers-color-scheme: dark)");
@@ -423,13 +447,50 @@ export class ChartsView extends LitElement {
 
   // --- rendering ------------------------------------------------------------------------------
 
-  private candidates(): GroupAddress[] {
+  private async loadRecorded(): Promise<void> {
+    try {
+      this.recorded = (
+        await api.get<{ items: Recorded[] }>("api/bus/archive/addresses")
+      ).items;
+    } catch {
+      this.recorded = [];
+    }
+  }
+
+  /** The project's group addresses and everything the recorder has seen, busiest first. */
+  private candidates(): Candidate[] {
     const q = this.query.trim().toLowerCase();
-    if (!q) return [];
-    return this.gas
-      .filter((g) => !this.series.some((s) => s.ga === g.text))
-      .filter((g) => g.text.startsWith(q) || g.name.toLowerCase().includes(q))
-      .slice(0, 10);
+    const seen = new Map<string, Candidate>();
+    for (const r of this.recorded)
+      seen.set(r.destination, {
+        text: r.destination,
+        name: r.name,
+        dpt: r.dpt,
+        count: r.count,
+        numeric: r.numeric > 0,
+      });
+    for (const g of this.gas) {
+      const known = seen.get(g.text);
+      if (known) {
+        known.name ||= g.name;
+        known.dpt ??= g.datapoint_type;
+      } else {
+        seen.set(g.text, {
+          text: g.text,
+          name: g.name,
+          dpt: g.datapoint_type,
+          count: 0,
+          numeric: true,
+        });
+      }
+    }
+    return [...seen.values()]
+      .filter((c) => !this.series.some((s) => s.ga === c.text))
+      .filter(
+        (c) => !q || c.text.startsWith(q) || c.name.toLowerCase().includes(q),
+      )
+      .sort((a, b) => b.count - a.count || a.text.localeCompare(b.text))
+      .slice(0, 20);
   }
 
   private stat(s: Series) {
@@ -462,14 +523,17 @@ export class ChartsView extends LitElement {
         <div class="picker">
           <sl-input
             size="small"
-            placeholder=${store.project.open ? tr("Add a group address (address or name)") : tr("Open a project to pick addresses by name")}
+            placeholder=${tr("Add a group address: pick a recorded one or type an address or name")}
             clearable
             .value=${this.query}
             @sl-input=${(e: Event) => {
               this.query = (e.target as HTMLInputElement).value;
               this.showMatches = true;
             }}
-            @sl-focus=${() => (this.showMatches = true)}
+            @sl-focus=${() => {
+              this.showMatches = true;
+              void this.loadRecorded();
+            }}
             @keydown=${(e: KeyboardEvent) => {
               if (e.key === "Enter") {
                 const first = matches[0];
@@ -487,7 +551,7 @@ export class ChartsView extends LitElement {
                   class="matches"
                   @mousedown=${(e: Event) => e.preventDefault()}
                 >
-                  ${matches.map((g) => html`<div @click=${() => this.add(g.text, g.name)}><span class="addr">${g.text}</span> ${g.name}${g.datapoint_type ? html` <span class="muted">${dptShort(g.datapoint_type)}</span>` : nothing}</div>`)}
+                  ${matches.map((c) => html`<div @click=${() => this.add(c.text, c.name)}><span class="addr">${c.text}</span> ${c.name}${c.dpt ? html` <span class="muted">${dptShort(c.dpt)}</span>` : nothing}${c.count ? html` <span class="muted">· ${c.count.toLocaleString()} ${tr("telegrams")}${c.numeric ? "" : ` (${tr("nothing numeric")})`}</span>` : nothing}</div>`)}
                 </div>`
               : nothing
           }

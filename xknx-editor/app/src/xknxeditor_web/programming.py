@@ -30,6 +30,8 @@ from xknx.exceptions import (
     ManagementConnectionTimeout,
 )
 
+from xknxeditor.download.errors import VerificationError
+
 from xknxeditor_web.errors import ApiError
 
 if TYPE_CHECKING:
@@ -94,6 +96,24 @@ def timeout_message(address: str, own: str, in_programming: list[str], detail: s
     )
 
 
+def verification_message(address: str, detail: str) -> str:
+    """A device answering "no" to a step of the load procedure. The property the download writes
+    to put an object into Load state is the usual one: not every device accepts a partial load."""
+    if "property 5" in detail and "0 elements" in detail:
+        return (
+            f"{address} refused to start the load procedure ({detail}). The device rejected the "
+            f"write to its load-state control, which a partial download needs. Try Download: full "
+            f"instead - it loads the object from scratch, which such devices do accept - and check "
+            f"that the application in the project is the one the device runs (Read from device "
+            f"shows what it carries)."
+        )
+    return (
+        f"{address} answered unexpectedly during the download ({detail}). Run Test before "
+        f"programming to see what the device reports, and check that the application in the "
+        f"project matches the one the device runs."
+    )
+
+
 @contextlib.asynccontextmanager
 async def explained(
     xknx: XKNX, address: str, clash: Callable[[str], Awaitable[str]] | None = None
@@ -110,6 +130,8 @@ async def explained(
         raise ApiError(timeout_message(address, own, await _in_programming(xknx), str(exc)), 504) from exc
     except ManagementConnectionError as exc:
         raise ApiError(f"Management connection to {address} failed: {exc}", 502) from exc
+    except VerificationError as exc:
+        raise ApiError(verification_message(address, str(exc)), 502) from exc
 
 SCOPES = {s.value: s for s in DownloadScope}
 

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.2 (2026-09-13)
+
+- Importing a `.knxproj` now takes the manufacturer data it bundles into the catalog as well, so
+  its devices resolve straight away instead of reading "application not in the catalog" until the
+  same file was imported a second time through the catalog.
+- The device editor has its tabs at the top: Overview (name, address, download, the bus buttons,
+  product data and documents), Parameters and Group objects, with the device's address and name in
+  the tab bar.
+- Closing the right or bottom panel gives the centre the whole space; 160 px stayed reserved for
+  the closed pane.
+- The charts picker offers the addresses the recorder has seen, busiest first and with their
+  telegram count, so traffic can be charted without a project or for addresses the project does
+  not know.
+- A device that refuses a step of the load procedure is explained (a partial download needs the
+  device to accept load control; a full download is the way round it) instead of reporting
+  `VerificationError`.
+
 ## 0.3.1 (2026-09-13)
 
 - Programming reports its progress in plain words ("writing to the device, step 3 of 12") instead

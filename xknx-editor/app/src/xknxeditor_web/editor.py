@@ -352,8 +352,31 @@ class Editor:
         self.path = dest
         self._remember(dest)
         log.info("imported %s as %s (%s)", source.name, pid, dest)
-        self._bump(structural=True, project=self.pid)
-        return self.info()
+        # A .knxproj carries the manufacturer data of its own devices. Take it into the catalog in
+        # the same step, or every device shows up as "application not in the catalog" until the
+        # user imports the very same file a second time through the catalog.
+        products = self._ingest_project_products(source, progress)
+        self._bump(structural=True, project=self.pid, catalog=bool(products.get("applications_added")))
+        return {**self.info(), "products": products}
+
+    def _ingest_project_products(self, source: Path, progress: Any = None) -> dict[str, Any]:
+        """Best effort: a project without bundled product data, or product data the catalog cannot
+        read, must not fail an import that has already succeeded."""
+        if callable(progress):
+            progress(None, "importing the product data")
+        try:
+            result = self.import_project_products(source)
+        except ApiError as exc:
+            log.info("no product data taken from %s: %s", source.name, exc)
+            return {"applications_added": [], "manufacturers": [], "note": str(exc)}
+        except Exception as exc:  # noqa: BLE001 - the project is imported either way
+            log.warning("product data in %s could not be imported: %s", source.name, exc, exc_info=True)
+            return {"applications_added": [], "manufacturers": [], "note": f"{type(exc).__name__}: {exc}"}
+        log.info(
+            "took %d manufacturer archive(s) and %d application(s) from %s into the catalog",
+            len(result["manufacturers"]), len(result["applications_added"]), source.name,
+        )
+        return result
 
     def close(self, forget: bool = True) -> None:
         if self.pid is not None:

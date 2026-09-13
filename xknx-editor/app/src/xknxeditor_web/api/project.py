@@ -143,8 +143,8 @@ async def import_project(request: Request) -> Any:
     password = opt(data, "password", str)
 
     def run(job: Job) -> Any:
-        jobs.report(job, None, "parsing")
-        return ed.import_knxproj(path, password)
+        jobs.report(job, None, "reading the project")
+        return ed.import_knxproj(path, password, lambda _p, stage: jobs.report(job, None, stage))
 
     return jobs.submit("import-knxproj", run, path=path).to_dict()
 

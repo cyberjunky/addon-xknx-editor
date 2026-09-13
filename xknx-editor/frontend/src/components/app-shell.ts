@@ -110,6 +110,12 @@ export class AppShell extends LitElement {
       white-space: nowrap;
       max-width: 40%;
     }
+    /* A pane the user closed must collapse completely; the 160px reserve below is there to keep
+       a pane usable while dragging, and would otherwise leave a strip of empty space. */
+    sl-split-panel.collapsed {
+      --min: 0px;
+      --max: 100%;
+    }
     sl-split-panel {
       height: 100%;
       min-height: 0;
@@ -605,6 +611,7 @@ export class AppShell extends LitElement {
         </div>
         <sl-split-panel
           slot="end"
+          class=${store.rightOpen ? "" : "collapsed"}
           position=${store.rightOpen ? this.pos.right : 100}
           ?disabled=${!store.rightOpen}
           @sl-reposition=${(e: Event) => store.rightOpen && this.savePos("right", e)}
@@ -612,6 +619,7 @@ export class AppShell extends LitElement {
           <sl-split-panel
             slot="start"
             vertical
+            class=${store.bottomOpen ? "" : "collapsed"}
             position=${store.bottomOpen ? this.pos.bottom : 100}
             ?disabled=${!store.bottomOpen}
             @sl-reposition=${(e: Event) => store.bottomOpen && this.savePos("bottom", e)}

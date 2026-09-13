@@ -683,6 +683,10 @@ export const VIEWS_NL: Record<string, string> = {
     "Niets gevonden. Typ een volledig adres zoals 1/2/3 om het aan te maken.",
   "No group addresses yet. Type one like 1/2/3 to create it.":
     "Nog geen groepsadressen. Typ er een zoals 1/2/3 om het aan te maken.",
+  Overview: "Overzicht",
+  "Add a group address: pick a recorded one or type an address or name":
+    "Groepsadres toevoegen: kies een opgenomen adres of typ een adres of naam",
+  "nothing numeric": "niets numeriek",
 };
 
 export const VIEWS_DE: Record<string, string> = {
@@ -1372,4 +1376,8 @@ export const VIEWS_DE: Record<string, string> = {
     "Kein Treffer. Geben Sie eine vollständige Adresse wie 1/2/3 ein, um sie anzulegen.",
   "No group addresses yet. Type one like 1/2/3 to create it.":
     "Noch keine Gruppenadressen. Geben Sie eine wie 1/2/3 ein, um sie anzulegen.",
+  Overview: "Übersicht",
+  "Add a group address: pick a recorded one or type an address or name":
+    "Gruppenadresse hinzufügen: eine aufgezeichnete wählen oder Adresse bzw. Name eingeben",
+  "nothing numeric": "nichts Numerisches",
 };

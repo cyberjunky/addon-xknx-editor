@@ -254,6 +254,21 @@ export class DevicePanel extends LitElement {
     .muted {
       color: var(--ha-text-2);
     }
+    sl-tab-group.device {
+      --padding: 12px 0 0;
+    }
+    .devname {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 14px 0 2px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .devname .addr {
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      color: var(--ha-text-2);
+    }
     .ga-list {
       margin-top: 8px;
       max-height: 260px;
@@ -597,290 +612,302 @@ export class DevicePanel extends LitElement {
     if (!d) return html`<sl-spinner></sl-spinner>`;
     const connected = store.bus.state === "CONNECTED";
     const busTitle = connected ? "" : "Connect to a gateway first (top right)";
+    const params = d.parameter_count ?? this.countParams(this.tree);
     return html`
-      <div class="grid">
-        <label>${tr("Name")}</label>
-        <sl-input
-          size="small"
-          value=${d.name}
-          @sl-change=${(e: Event) => this.act(() => api.patch(`api/devices/${d.id}`, { name: (e.target as HTMLInputElement).value }))}
-        ></sl-input>
-        <label>${tr("Individual address")}</label>
-        <sl-input
-          size="small"
-          value=${d.individual_address ?? ""}
-          placeholder="1.1.5"
-          style="max-width:160px"
-          help-text=${this.addressError}
-          class=${this.addressError ? "invalid" : ""}
-          @sl-input=${(e: Event) => (this.addressError = individualAddressError((e.target as HTMLInputElement).value))}
-          @sl-change=${(e: Event) => {
-            const value = (e.target as HTMLInputElement).value;
-            const problem = individualAddressError(value);
-            this.addressError = problem;
-            if (problem) return; // keep the typed value on screen so it can be corrected
-            void this.act(() =>
-              api.patch(`api/devices/${d.id}`, { individual_address: value }),
-            );
-          }}
-        ></sl-input>
-        <label>${tr("Download")}</label>
-        <sl-select
-          size="small"
-          value=${this.scope}
-          hoist
-          style="max-width:280px"
-          @sl-change=${(e: Event) => (this.scope = (e.target as HTMLSelectElement).value)}
-          >${SCOPES.map(([v, l]) => html`<sl-option value=${v}>${tr(l)}</sl-option>`)}</sl-select
+      <sl-tab-group class="device">
+        <span slot="nav" class="devname"
+          ><span class="addr">${d.individual_address ?? "-"}</span>
+          ${d.name}</span
         >
-      </div>
-      <div class="row">
-        <sl-tooltip
-          content=${busTitle || tr("Read the device and show every byte a download would change, without writing")}
-        >
-          <sl-button
-            size="small"
-            ?disabled=${!connected || !d.resolved || this.busy !== null}
-            ?loading=${this.busy === "preflight"}
-            @click=${() =>
-              this.busAction("preflight", async () => {
-                const j = await this.job(() =>
-                  api.post<Job>(`api/devices/${d.id}/preflight`, {
-                    scope: this.scope,
+        <sl-tab slot="nav" panel="overview">${tr("Overview")}</sl-tab>
+        ${d.resolved ? html`<sl-tab slot="nav" panel="parameters">${tr("Parameters")} (${params})</sl-tab><sl-tab slot="nav" panel="objects">${tr("Group objects")} (${this.comObjects.length})</sl-tab>` : nothing}
+        ${d.resolved && d.dali ? html`<sl-tab slot="nav" panel="dali">${tr("DALI bus")}</sl-tab>` : nothing}
+        <sl-tab-panel name="overview">
+          <div class="grid">
+            <label>${tr("Name")}</label>
+            <sl-input
+              size="small"
+              value=${d.name}
+              @sl-change=${(e: Event) => this.act(() => api.patch(`api/devices/${d.id}`, { name: (e.target as HTMLInputElement).value }))}
+            ></sl-input>
+            <label>${tr("Individual address")}</label>
+            <sl-input
+              size="small"
+              value=${d.individual_address ?? ""}
+              placeholder="1.1.5"
+              style="max-width:160px"
+              help-text=${this.addressError}
+              class=${this.addressError ? "invalid" : ""}
+              @sl-input=${(e: Event) => (this.addressError = individualAddressError((e.target as HTMLInputElement).value))}
+              @sl-change=${(e: Event) => {
+                const value = (e.target as HTMLInputElement).value;
+                const problem = individualAddressError(value);
+                this.addressError = problem;
+                if (problem) return; // keep the typed value on screen so it can be corrected
+                void this.act(() =>
+                  api.patch(`api/devices/${d.id}`, {
+                    individual_address: value,
                   }),
                 );
-                this.preflight = j.result as Preflight;
-              })}
-            >${tr("Test before programming")}</sl-button
-          >
-        </sl-tooltip>
-        <sl-tooltip
-          content=${busTitle || tr("Write the configuration to the device")}
-        >
-          <sl-button
-            size="small"
-            variant="primary"
-            ?disabled=${!connected || !d.resolved || this.busy !== null}
-            @click=${() => (this.confirmProgram = true)}
-            >${tr("Program device")}</sl-button
-          >
-        </sl-tooltip>
-        <sl-button
-          size="small"
-          ?disabled=${!d.resolved}
-          ?loading=${this.busy === "memory"}
-          @click=${() =>
-            this.busAction("memory", async () => {
-              this.memory = await api.get<Memory>(`api/devices/${d.id}/memory`);
-            })}
-          >${tr("Preview memory")}</sl-button
-        >
-        ${this.progress ? html`<span class="muted">${this.progress.stage}${this.progress.value !== null ? ` ${Math.round(this.progress.value * 100)}%` : ""}</span>` : nothing}
-      </div>
+              }}
+            ></sl-input>
+            <label>${tr("Download")}</label>
+            <sl-select
+              size="small"
+              value=${this.scope}
+              hoist
+              style="max-width:280px"
+              @sl-change=${(e: Event) => (this.scope = (e.target as HTMLSelectElement).value)}
+              >${SCOPES.map(([v, l]) => html`<sl-option value=${v}>${tr(l)}</sl-option>`)}</sl-select
+            >
+          </div>
+          <div class="row">
+            <sl-tooltip
+              content=${busTitle || tr("Read the device and show every byte a download would change, without writing")}
+            >
+              <sl-button
+                size="small"
+                ?disabled=${!connected || !d.resolved || this.busy !== null}
+                ?loading=${this.busy === "preflight"}
+                @click=${() =>
+                  this.busAction("preflight", async () => {
+                    const j = await this.job(() =>
+                      api.post<Job>(`api/devices/${d.id}/preflight`, {
+                        scope: this.scope,
+                      }),
+                    );
+                    this.preflight = j.result as Preflight;
+                  })}
+                >${tr("Test before programming")}</sl-button
+              >
+            </sl-tooltip>
+            <sl-tooltip
+              content=${busTitle || tr("Write the configuration to the device")}
+            >
+              <sl-button
+                size="small"
+                variant="primary"
+                ?disabled=${!connected || !d.resolved || this.busy !== null}
+                @click=${() => (this.confirmProgram = true)}
+                >${tr("Program device")}</sl-button
+              >
+            </sl-tooltip>
+            <sl-button
+              size="small"
+              ?disabled=${!d.resolved}
+              ?loading=${this.busy === "memory"}
+              @click=${() =>
+                this.busAction("memory", async () => {
+                  this.memory = await api.get<Memory>(
+                    `api/devices/${d.id}/memory`,
+                  );
+                })}
+              >${tr("Preview memory")}</sl-button
+            >
+            ${this.progress ? html`<span class="muted">${this.progress.stage}${this.progress.value !== null ? ` ${Math.round(this.progress.value * 100)}%` : ""}</span>` : nothing}
+          </div>
 
-      <div class="row">
-        <sl-tooltip
-          content=${busTitle || tr("Read mask, application, serial number and error state from the device")}
-        >
-          <sl-button
-            size="small"
-            ?disabled=${!connected || this.busy !== null}
-            ?loading=${this.busy === "read"}
-            @click=${() =>
-              this.busAction("read", async () => {
-                this.overview = await api.post<Overview>(
-                  `api/devices/${d.id}/read`,
-                  {},
-                );
-              })}
-            >${tr("Read from device")}</sl-button
-          >
-        </sl-tooltip>
-        <sl-tooltip
-          content=${busTitle || tr("Write this address into a device in programming mode (press its programming button first)")}
-        >
-          <sl-button
-            size="small"
-            ?disabled=${!connected || !d.individual_address || this.busy !== null}
-            ?loading=${this.busy === "assign"}
-            @click=${() => {
-              this.assignSerial = "";
-              this.assignDialog = true;
-              this.watchProgramming(true);
-            }}
-            >${tr("Assign address")}</sl-button
-          >
-        </sl-tooltip>
-        <sl-tooltip content=${busTitle || tr("Restart the device")}>
-          <sl-button
-            size="small"
-            ?disabled=${!connected || this.busy !== null}
-            ?loading=${this.busy === "restart"}
-            @click=${() =>
-              this.busAction("restart", async () => {
-                await api.post(`api/devices/${d.id}/restart`, {});
-                store.say(tr("Restart sent"), "success");
-              })}
-            >${tr("Restart")}</sl-button
-          >
-        </sl-tooltip>
-        <sl-tooltip
-          content=${tr("Unload the application (select scope Unload, then Program device)")}
-          ><sl-button size="small" disabled
-            >${tr("Reset…")}</sl-button
-          ></sl-tooltip
-        >
-      </div>
-      <sl-details summary=${tr("Manufacturer")} open>
-        <table class="info">
-          <tr>
-            <th>${tr("Manufacturer")}</th>
-            <td>${d.manufacturer_name || "-"}</td>
-          </tr>
-          <tr>
-            <th>${tr("Application")}</th>
-            <td>
-              <code>${d.application?.id ?? "-"}</code
-              >${d.application ? html` · ${d.application.name}` : nothing}
-            </td>
-          </tr>
-          <tr>
-            <th>${tr("Application version")}</th>
-            <td>${d.application?.version ?? "-"}</td>
-          </tr>
-          <tr>
-            <th>${tr("Order number")}</th>
-            <td>${d.order_number || "-"}</td>
-          </tr>
-          <tr>
-            <th>${tr("Hardware")}</th>
-            <td>${d.hardware_name || "-"}</td>
-          </tr>
-          <tr>
-            <th>${tr("Product")}</th>
-            <td>${d.product_name || "-"}</td>
-          </tr>
-          <tr>
-            <th>${tr("Description")}</th>
-            <td>${d.description || "-"}</td>
-          </tr>
-          <tr>
-            <th>${tr("Product ref")}</th>
-            <td><code>${d.product_ref_id ?? "-"}</code></td>
-          </tr>
-          <tr>
-            <th>${tr("Program ref")}</th>
-            <td><code>${d.hardware2program_ref_id ?? "-"}</code></td>
-          </tr>
-          <tr>
-            <th>${tr("Loaded")}</th>
-            <td>
-              ${(["individual_address_loaded", "application_program_loaded", "parameters_loaded", "communication_part_loaded"] as const).map((k) => html`<sl-badge variant=${d[k] ? "success" : "neutral"} pill>${tr(k.replace(/_loaded$/, "").replace(/_/g, " "))}</sl-badge> `)}${d.last_download ? html`<span class="muted">${tr("last download")} ${d.last_download.replace("T", " ").slice(0, 16)}</span>` : nothing}
-            </td>
-          </tr>
+          <div class="row">
+            <sl-tooltip
+              content=${busTitle || tr("Read mask, application, serial number and error state from the device")}
+            >
+              <sl-button
+                size="small"
+                ?disabled=${!connected || this.busy !== null}
+                ?loading=${this.busy === "read"}
+                @click=${() =>
+                  this.busAction("read", async () => {
+                    this.overview = await api.post<Overview>(
+                      `api/devices/${d.id}/read`,
+                      {},
+                    );
+                  })}
+                >${tr("Read from device")}</sl-button
+              >
+            </sl-tooltip>
+            <sl-tooltip
+              content=${busTitle || tr("Write this address into a device in programming mode (press its programming button first)")}
+            >
+              <sl-button
+                size="small"
+                ?disabled=${!connected || !d.individual_address || this.busy !== null}
+                ?loading=${this.busy === "assign"}
+                @click=${() => {
+                  this.assignSerial = "";
+                  this.assignDialog = true;
+                  this.watchProgramming(true);
+                }}
+                >${tr("Assign address")}</sl-button
+              >
+            </sl-tooltip>
+            <sl-tooltip content=${busTitle || tr("Restart the device")}>
+              <sl-button
+                size="small"
+                ?disabled=${!connected || this.busy !== null}
+                ?loading=${this.busy === "restart"}
+                @click=${() =>
+                  this.busAction("restart", async () => {
+                    await api.post(`api/devices/${d.id}/restart`, {});
+                    store.say(tr("Restart sent"), "success");
+                  })}
+                >${tr("Restart")}</sl-button
+              >
+            </sl-tooltip>
+            <sl-tooltip
+              content=${tr("Unload the application (select scope Unload, then Program device)")}
+              ><sl-button size="small" disabled
+                >${tr("Reset…")}</sl-button
+              ></sl-tooltip
+            >
+          </div>
+          <sl-details summary=${tr("Manufacturer")} open>
+            <table class="info">
+              <tr>
+                <th>${tr("Manufacturer")}</th>
+                <td>${d.manufacturer_name || "-"}</td>
+              </tr>
+              <tr>
+                <th>${tr("Application")}</th>
+                <td>
+                  <code>${d.application?.id ?? "-"}</code
+                  >${d.application ? html` · ${d.application.name}` : nothing}
+                </td>
+              </tr>
+              <tr>
+                <th>${tr("Application version")}</th>
+                <td>${d.application?.version ?? "-"}</td>
+              </tr>
+              <tr>
+                <th>${tr("Order number")}</th>
+                <td>${d.order_number || "-"}</td>
+              </tr>
+              <tr>
+                <th>${tr("Hardware")}</th>
+                <td>${d.hardware_name || "-"}</td>
+              </tr>
+              <tr>
+                <th>${tr("Product")}</th>
+                <td>${d.product_name || "-"}</td>
+              </tr>
+              <tr>
+                <th>${tr("Description")}</th>
+                <td>${d.description || "-"}</td>
+              </tr>
+              <tr>
+                <th>${tr("Product ref")}</th>
+                <td><code>${d.product_ref_id ?? "-"}</code></td>
+              </tr>
+              <tr>
+                <th>${tr("Program ref")}</th>
+                <td><code>${d.hardware2program_ref_id ?? "-"}</code></td>
+              </tr>
+              <tr>
+                <th>${tr("Loaded")}</th>
+                <td>
+                  ${(["individual_address_loaded", "application_program_loaded", "parameters_loaded", "communication_part_loaded"] as const).map((k) => html`<sl-badge variant=${d[k] ? "success" : "neutral"} pill>${tr(k.replace(/_loaded$/, "").replace(/_/g, " "))}</sl-badge> `)}${d.last_download ? html`<span class="muted">${tr("last download")} ${d.last_download.replace("T", " ").slice(0, 16)}</span>` : nothing}
+                </td>
+              </tr>
+              ${
+                d.serial_number
+                  ? html`<tr>
+                      <th>${tr("Serial number")}</th>
+                      <td>${d.serial_number}</td>
+                    </tr>`
+                  : nothing
+              }
+            </table>
+            <details
+              style="margin-top:10px"
+              ?open=${this.docsOpen ?? this.docCount > 0}
+              @toggle=${(e: Event) => (this.docsOpen = (e.target as HTMLDetailsElement).open)}
+            >
+              <summary style="cursor:pointer;color:var(--ha-text-2)">
+                ${tr("Documents")} —
+                ${d.order_number || d.name}${this.docCount ? ` (${this.docCount})` : ""}
+              </summary>
+              <xknx-docs-view
+                compact
+                tag=${d.order_number || ""}
+                @docs-count=${(e: CustomEvent<{ count: number }>) => (this.docCount = e.detail.count)}
+              ></xknx-docs-view>
+            </details>
+            <div class="row">
+              <sl-button
+                size="small"
+                ?loading=${this.busy === "manual"}
+                @click=${this.manual}
+                >${icon("search", 14)} ${tr("Find manual")}</sl-button
+              >
+              <sl-button
+                size="small"
+                variant="danger"
+                outline
+                @click=${() => {
+                  if (
+                    !confirm(
+                      `${tr("Remove")} ${d.individual_address ?? ""} ${d.name} ${tr("from the project? Its parameters and links are removed with it; the bus device is not touched.")}`,
+                    )
+                  )
+                    return;
+                  void this.act(async () => {
+                    await api.delete(`api/devices/${d.id}`);
+                    store.select(null);
+                  }, "Device removed");
+                }}
+                >${icon("trash", 14)}
+                ${tr("Remove device from project")}</sl-button
+              >
+            </div>
+          </sl-details>
+
+          ${this.overview ? this.renderOverview(this.overview) : nothing}
+          ${this.preflight ? this.renderPreflight(this.preflight) : nothing}
           ${
-            d.serial_number
-              ? html`<tr>
-                  <th>${tr("Serial number")}</th>
-                  <td>${d.serial_number}</td>
-                </tr>`
-              : nothing
+            d.resolved
+              ? nothing
+              : html`<div class="warn">
+                  ${d.error ?? "Application not in the catalog."}
+                  <div class="row">
+                    <sl-button
+                      size="small"
+                      variant="primary"
+                      ?loading=${this.busy === "fetch"}
+                      @click=${this.fetchProduct}
+                      >${icon("download", 14)}
+                      ${tr("Fetch product data online")}</sl-button
+                    >
+                    <sl-button
+                      size="small"
+                      @click=${() => store.openCatalog(d.order_number || d.product_name, d.manufacturer_name)}
+                      >${icon("search", 14)} Open catalog for
+                      ${d.order_number || d.product_name}</sl-button
+                    >
+                  </div>
+                </div>`
           }
-        </table>
-        <details
-          style="margin-top:10px"
-          ?open=${this.docsOpen ?? this.docCount > 0}
-          @toggle=${(e: Event) => (this.docsOpen = (e.target as HTMLDetailsElement).open)}
-        >
-          <summary style="cursor:pointer;color:var(--ha-text-2)">
-            ${tr("Documents")} —
-            ${d.order_number || d.name}${this.docCount ? ` (${this.docCount})` : ""}
-          </summary>
-          <xknx-docs-view
-            compact
-            tag=${d.order_number || ""}
-            @docs-count=${(e: CustomEvent<{ count: number }>) => (this.docCount = e.detail.count)}
-          ></xknx-docs-view>
-        </details>
-        <div class="row">
-          <sl-button
-            size="small"
-            ?loading=${this.busy === "manual"}
-            @click=${this.manual}
-            >${icon("search", 14)} ${tr("Find manual")}</sl-button
-          >
-          <sl-button
-            size="small"
-            variant="danger"
-            outline
-            @click=${() => {
-              if (
-                !confirm(
-                  `${tr("Remove")} ${d.individual_address ?? ""} ${d.name} ${tr("from the project? Its parameters and links are removed with it; the bus device is not touched.")}`,
-                )
-              )
-                return;
-              void this.act(async () => {
-                await api.delete(`api/devices/${d.id}`);
-                store.select(null);
-              }, "Device removed");
-            }}
-            >${icon("trash", 14)} ${tr("Remove device from project")}</sl-button
-          >
-        </div>
-      </sl-details>
-
-      ${this.overview ? this.renderOverview(this.overview) : nothing}
-      ${this.preflight ? this.renderPreflight(this.preflight) : nothing}
-      ${
-        d.resolved
-          ? html`<sl-tab-group>
-              <sl-tab slot="nav" panel="parameters"
-                >${tr("Parameters")}
-                (${d.parameter_count ?? this.countParams(this.tree)})</sl-tab
-              >
-              <sl-tab slot="nav" panel="objects"
-                >${tr("Group objects")} (${this.comObjects.length})</sl-tab
-              >
-              ${d.dali ? html`<sl-tab slot="nav" panel="dali">${tr("DALI bus")}</sl-tab>` : nothing}
-              <sl-tab-panel name="parameters">
-                <sl-input
-                  size="small"
-                  placeholder=${tr("Filter parameters…")}
-                  clearable
-                  style="max-width:420px;margin-bottom:8px"
-                  @sl-input=${(e: Event) => (this.paramFilter = (e.target as HTMLInputElement).value)}
-                ></sl-input>
-                <xknx-parameter-tree
-                  .nodes=${this.filterTree(this.tree)}
-                  @param-change=${this.onParam}
-                ></xknx-parameter-tree>
-              </sl-tab-panel>
-              <sl-tab-panel name="objects"
-                >${this.renderObjects()}</sl-tab-panel
-              >
-              ${d.dali ? html`<sl-tab-panel name="dali"><xknx-dali-panel .deviceId=${d.id}></xknx-dali-panel></sl-tab-panel>` : nothing}
-            </sl-tab-group>`
-          : html`<div class="warn">
-              ${d.error ?? "Application not in the catalog."}
-              <div class="row">
-                <sl-button
-                  size="small"
-                  variant="primary"
-                  ?loading=${this.busy === "fetch"}
-                  @click=${this.fetchProduct}
-                  >${icon("download", 14)}
-                  ${tr("Fetch product data online")}</sl-button
+        </sl-tab-panel>
+        ${
+          d.resolved
+            ? html`<sl-tab-panel name="parameters">
+                  <sl-input
+                    size="small"
+                    placeholder=${tr("Filter parameters…")}
+                    clearable
+                    style="max-width:420px;margin-bottom:8px"
+                    @sl-input=${(e: Event) => (this.paramFilter = (e.target as HTMLInputElement).value)}
+                  ></sl-input>
+                  <xknx-parameter-tree
+                    .nodes=${this.filterTree(this.tree)}
+                    @param-change=${this.onParam}
+                  ></xknx-parameter-tree>
+                </sl-tab-panel>
+                <sl-tab-panel name="objects"
+                  >${this.renderObjects()}</sl-tab-panel
                 >
-                <sl-button
-                  size="small"
-                  @click=${() => store.openCatalog(d.order_number || d.product_name, d.manufacturer_name)}
-                  >${icon("search", 14)} Open catalog for
-                  ${d.order_number || d.product_name}</sl-button
-                >
-              </div>
-            </div>`
-      }
+                ${d.dali ? html`<sl-tab-panel name="dali"><xknx-dali-panel .deviceId=${d.id}></xknx-dali-panel></sl-tab-panel>` : nothing}`
+            : nothing
+        }
+      </sl-tab-group>
       ${this.renderLinkDialog()} ${this.renderProgramDialog()}
       ${this.renderMemoryDialog()}
     `;

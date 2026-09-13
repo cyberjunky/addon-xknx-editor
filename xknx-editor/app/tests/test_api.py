@@ -357,3 +357,18 @@ def test_timeout_message_points_at_the_device_in_programming_mode() -> None:
     assert "does not change the device" in waiting and "No ACK received" in waiting
     alone = timeout_message("1.1.19", "1.1.2", [], "")
     assert "programming button" in alone and "coupler" in alone and "1.1.2" in alone
+
+
+def test_project_import_takes_its_product_data_into_the_catalog(client: TestClient, dirs: tuple[Path, Path]) -> None:
+    """A .knxproj bundles the manufacturer data of its devices; importing the project must use it,
+    or every device reads as "application not in the catalog" until the same file is imported a
+    second time through the catalog."""
+    _, share = dirs
+    assert client.get("/api/catalog").json()["products"] == 0
+    job = wait_job(client, client.post("/api/project/import", json={"path": str(share / KNXPROJ.name)}).json())
+    assert job["status"] == "done", job
+    assert job["result"]["products"]["manufacturers"] == ["M-0002"]
+    assert job["result"]["products"]["applications_added"]
+    assert client.get("/api/catalog").json()["products"] >= 1
+    devices = client.get("/api/project/devices").json()["items"]
+    assert devices and all(d["resolved"] for d in devices)

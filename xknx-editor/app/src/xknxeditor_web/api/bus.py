@@ -249,6 +249,19 @@ async def archive_summary(request: Request) -> Any:
     return await asyncio.to_thread(_recorder(request).summary)
 
 
+async def archive_addresses(request: Request) -> Any:
+    """Group addresses in the recording, with the project's names where it knows them."""
+    rec = _recorder(request)
+    since, until = _range(request, 7 * 24 * 3600)
+    items = await asyncio.to_thread(rec.addresses, since, until)
+    names = await _ga_names(request)
+    for row in items:
+        info = names.get(row["destination"])
+        row["name"] = info[0] if info else ""
+        row["dpt"] = info[1] if info else None
+    return {"items": items, "count": len(items)}
+
+
 async def series(request: Request) -> Any:
     rec = _recorder(request)
     text = (request.query_params.get("ga") or "").strip()
@@ -384,6 +397,7 @@ def routes() -> list[Route]:
         route("/api/bus/archive", archive),
         route("/api/bus/archive.csv", archive_csv),
         route("/api/bus/archive/summary", archive_summary),
+        route("/api/bus/archive/addresses", archive_addresses),
         route("/api/bus/archive/clear", archive_clear, ["POST"]),
         route("/api/bus/series", series),
         route("/api/bus/stats", stats),
