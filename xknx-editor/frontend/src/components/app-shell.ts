@@ -188,6 +188,11 @@ export class AppShell extends LitElement {
       bottom: 16px;
       z-index: 20;
       min-width: 240px;
+      max-width: min(560px, calc(100vw - 32px));
+    }
+    .toast::part(message) {
+      white-space: pre-line;
+      line-height: 1.45;
     }
     .row {
       display: flex;
@@ -636,7 +641,7 @@ export class AppShell extends LitElement {
           </div>
         </sl-split-panel>
       </sl-split-panel>
-      ${store.toast ? html`<sl-alert class="toast" variant=${store.toast.variant} open>${store.toast.message}</sl-alert>` : nothing}
+      ${store.toast ? html`<sl-alert class="toast" variant=${store.toast.variant} open closable @sl-after-hide=${() => store.dismiss()}>${store.toast.message}</sl-alert>` : nothing}
       ${this.renderDialog()}
     `;
   }

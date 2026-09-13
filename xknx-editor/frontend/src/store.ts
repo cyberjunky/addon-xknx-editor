@@ -128,6 +128,7 @@ class Store {
   rightOpen = true;
   toast: { message: string; variant: "primary" | "success" | "danger" } | null =
     null;
+  private toastSeq = 0;
   bus: BusStatus = EMPTY_BUS;
   telegrams: TelegramRecord[] = [];
   /** The live group monitor's recording state. It lives here, not in the view: the bottom dock
@@ -291,16 +292,25 @@ class Store {
     this.notify();
   }
 
+  /** Show a message at the bottom right. Successes fade by themselves; an error stays until it
+   * is closed, since it is usually long and worth reading twice. */
   say(
     message: string,
     variant: "primary" | "success" | "danger" = "primary",
   ): void {
     this.toast = { message, variant };
+    this.toastSeq += 1;
+    const seq = this.toastSeq;
     this.notify();
+    if (variant === "danger") return;
     window.setTimeout(() => {
-      this.toast = null;
-      this.notify();
-    }, 4000);
+      if (this.toastSeq === seq) this.dismiss();
+    }, 6000);
+  }
+
+  dismiss(): void {
+    this.toast = null;
+    this.notify();
   }
 
   private persist(): void {

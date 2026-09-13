@@ -656,6 +656,9 @@ export const VIEWS_NL: Record<string, string> = {
   "Find manual": "Handleiding zoeken",
   "No manual found; opened a web search for this device instead":
     "Geen handleiding gevonden; in plaats daarvan een webzoekopdracht voor dit apparaat geopend",
+  "Remove device from project": "Apparaat uit project verwijderen",
+  "from the project? Its parameters and links are removed with it; the bus device is not touched.":
+    "uit het project verwijderen? De parameters en koppelingen gaan mee; het apparaat op de bus blijft ongemoeid.",
 };
 
 export const VIEWS_DE: Record<string, string> = {
@@ -1318,4 +1321,7 @@ export const VIEWS_DE: Record<string, string> = {
   "Find manual": "Handbuch suchen",
   "No manual found; opened a web search for this device instead":
     "Kein Handbuch gefunden; stattdessen wurde eine Websuche für dieses Gerät geöffnet",
+  "Remove device from project": "Gerät aus dem Projekt entfernen",
+  "from the project? Its parameters and links are removed with it; the bus device is not touched.":
+    "aus dem Projekt entfernen? Parameter und Verknüpfungen gehen mit; das Gerät am Bus bleibt unberührt.",
 };

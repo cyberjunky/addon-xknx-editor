@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.3 (2026-09-13)
+
+- Messages at the bottom right have a close button, and an error stays until it is closed instead
+  of fading after a few seconds - the programming errors are long enough to want reading twice.
+- "Remove from project" is "Remove device from project" and asks first.
+
 ## 0.2.2 (2026-09-13)
 
 - Fix 0.2.1: a failing job reported "failed" with no message at all (test before programming,

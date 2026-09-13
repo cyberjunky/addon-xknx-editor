@@ -669,12 +669,19 @@ export class DevicePanel extends LitElement {
             size="small"
             variant="danger"
             outline
-            @click=${() =>
-              this.act(async () => {
+            @click=${() => {
+              if (
+                !confirm(
+                  `${tr("Remove")} ${d.individual_address ?? ""} ${d.name} ${tr("from the project? Its parameters and links are removed with it; the bus device is not touched.")}`,
+                )
+              )
+                return;
+              void this.act(async () => {
                 await api.delete(`api/devices/${d.id}`);
                 store.select(null);
-              }, "Device removed")}
-            >${icon("trash", 14)} ${tr("Remove from project")}</sl-button
+              }, "Device removed");
+            }}
+            >${icon("trash", 14)} ${tr("Remove device from project")}</sl-button
           >
         </div>
       </sl-details>
