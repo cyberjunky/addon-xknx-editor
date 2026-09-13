@@ -14,6 +14,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from xknxeditor_web.errors import ApiError
 from xknxeditor_web.worker import EditorWorker
 
 

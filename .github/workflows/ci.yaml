@@ -96,6 +96,10 @@ jobs:
       - name: Install the backend into that venv
         working-directory: xknx-editor/vendor/xknx-editor
         run: uv pip install --python .venv/bin/python -e "../../app[dev]"
+      - name: Check for undefined names
+        # F821 catches a name used without an import - the kind of slip that only shows up on the
+        # error path, where it turns a clear message into a silent failure.
+        run: uvx ruff check --select F821,F811,F822 --output-format concise xknx-editor/app/src xknx-editor/app/tests
       - name: Run tests
         working-directory: xknx-editor/app
         run: ../vendor/xknx-editor/.venv/bin/python -m pytest -q

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2 (2026-09-13)
+
+- Fix 0.2.1: a failing job reported "failed" with no message at all (test before programming,
+  programming, read from device). The new error formatting used `ApiError` without importing it,
+  so the error handler itself broke before it could say what went wrong. CI now checks for
+  undefined names, which would have caught it.
+
 ## 0.2.1 (2026-09-13)
 
 - "Download PDF manual" is now "Find manual" and searches the web with whatever the device
