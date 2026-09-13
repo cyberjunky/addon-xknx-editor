@@ -147,12 +147,28 @@ async def manual(request: Request) -> Any:
     )
 
 
-def _clash(ed: Editor) -> Callable[[str], Awaitable[str]]:
-    """Ask the project - on its own thread, and only when something failed - whether an address
-    belongs to a device."""
+def _clash(request: Request) -> Callable[[str], Awaitable[str]]:
+    """Who else is on the editor's own address, asked only when something failed: a device in the
+    project, or - harder evidence - telegrams that arrived from that address."""
+    ed: Editor = request.app.state.editor
+    recorder = getattr(request.app.state, "recorder", None)
 
     async def lookup(address: str) -> str:
-        return await ed.worker.run(ed.device_on_address, address)
+        device = await ed.worker.run(ed.device_on_address, address)
+        if device:
+            return f"The editor sends from {address}, which is also {device} in this project."
+        if recorder is not None:
+            import asyncio
+            import time
+
+            seen = await asyncio.to_thread(recorder.incoming_from, address, time.time() - 86400)
+            if seen:
+                return (
+                    f"The editor sends from {address}, and {seen} telegram(s) arrived FROM that "
+                    f"address in the last day - so something else on the bus uses it too (another "
+                    f"tunnel, such as Home Assistant's KNX integration, or a device)."
+                )
+        return ""
 
     return lookup
 
@@ -172,7 +188,7 @@ async def preflight(request: Request) -> Any:
         prepared = await ed.worker.run(prog.prepare, ed, device_id, _keyring(request))
         master = await ed.worker.run(prog.master_for, ed)
         jobs.report(job, None, "reading device")
-        async with prog.explained(xknx, prepared.address, _clash(ed)):
+        async with prog.explained(xknx, prepared.address, _clash(request)):
             return await prog.run_preflight(xknx, prepared, scope, master)
 
     return jobs.submit_async("preflight", run, device_id=device_id, scope=scope.value).to_dict()
@@ -197,7 +213,7 @@ async def program(request: Request) -> Any:
         def progress(done: int, total: int) -> None:
             jobs.report(job, done / total if total else None, f"load control {done}/{total}")
 
-        async with prog.explained(xknx, prepared.address, _clash(ed)):
+        async with prog.explained(xknx, prepared.address, _clash(request)):
             await prog.run_download(xknx, prepared, scope, master, progress)
         await ed.worker.run(ed.mark_programmed, device_id, scope.value)
         return {"device_id": device_id, "scope": scope.value, "address": prepared.address}
@@ -214,7 +230,7 @@ async def read_device(request: Request) -> Any:
     if not d.get("individual_address"):
         raise ApiError("The device has no individual address", 409)
     try:
-        async with prog.explained(xknx, d["individual_address"], _clash(ed)):
+        async with prog.explained(xknx, d["individual_address"], _clash(request)):
             return await prog.read_overview(xknx, d["individual_address"])
     except Exception as exc:  # noqa: BLE001 - bus errors surface as 502
         raise ApiError(f"Read failed: {type(exc).__name__}: {exc}", 502) from exc
@@ -280,7 +296,7 @@ async def restart_device(request: Request) -> Any:
     if not d.get("individual_address"):
         raise ApiError("The device has no individual address", 409)
     try:
-        async with prog.explained(xknx, d["individual_address"], _clash(ed)):
+        async with prog.explained(xknx, d["individual_address"], _clash(request)):
             await prog.restart(xknx, d["individual_address"])
     except Exception as exc:  # noqa: BLE001
         raise ApiError(f"Restart failed: {type(exc).__name__}: {exc}", 502) from exc

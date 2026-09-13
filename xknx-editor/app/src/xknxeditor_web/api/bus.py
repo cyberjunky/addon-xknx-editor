@@ -63,12 +63,21 @@ async def connect(request: Request) -> Any:
     # every point-to-point exchange is at risk, so say it now rather than at the first download.
     own = result.get("own_address") or ""
     ed = request.app.state.editor
-    clash = await ed.worker.run(ed.device_on_address, own) if own else ""
-    if clash:
+    device = await ed.worker.run(ed.device_on_address, own) if own else ""
+    seen = 0
+    rec = getattr(request.app.state, "recorder", None)
+    if own and rec is not None:
+        seen = await asyncio.to_thread(rec.incoming_from, own, time.time() - 86400)
+    if device or seen:
+        who = (
+            f"{device} in this project also uses it"
+            if device
+            else f"{seen} telegram(s) arrived from it in the last day, so something else uses it"
+        )
         result["address_warning"] = (
-            f"The gateway gave this editor the address {own}, which {clash} in this project also "
-            f"uses. Programming and reading devices will fail until the editor gets a free address "
-            f"(Gateway settings -> Own individual address)."
+            f"The gateway gave this editor the address {own}, and {who}. Programming and reading "
+            f"devices will fail until the editor gets a free address (Gateway settings -> Own "
+            f"individual address)."
         )
     return result
 

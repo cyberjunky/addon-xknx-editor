@@ -46,11 +46,10 @@ def refusal_message(address: str, own: str, clash: str, detail: str) -> str:
     because = f" ({detail})" if detail else ""
     if clash:
         return (
-            f"{address} dropped the connection{because}. The editor sends from {own}, which is "
-            f"also {clash} in this project: two things on one individual address break the "
-            f"point-to-point exchange, and the device disconnects. Give the editor a free address "
-            f"under Gateway settings -> Own individual address (or reserve the tunnel addresses in "
-            f"the gateway itself) and try again."
+            f"{address} dropped the connection{because}. {clash} Two things on one individual "
+            f"address break the point-to-point exchange, and the device disconnects. Give the "
+            f"editor a free address under Gateway settings -> Own individual address (or reserve "
+            f"the tunnel addresses in the gateway itself) and try again."
         )
     return (
         f"{address} refused the connection or dropped it{because}. Three things cause this: "

@@ -407,7 +407,9 @@ class BusService:
             source=str(telegram.source_address),
             destination=str(dest),
             destination_kind="group" if isinstance(dest, GroupAddress) else "individual" if isinstance(dest, IndividualAddress) else "other",
-            apci=type(payload).__name__ if payload is not None else "",
+            # Without a payload the telegram is connection control (T_Connect, T_Disconnect,
+            # T_ACK): the exchange a download is made of, worth seeing in the monitor.
+            apci=type(payload).__name__ if payload is not None else type(telegram.tpci).__name__,
             raw=raw,
             value=value,
             unit=unit,

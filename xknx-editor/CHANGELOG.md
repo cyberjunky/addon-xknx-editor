@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.6 (2026-09-13)
+
+- A duplicate individual address is now proven rather than suggested: telegrams that arrive FROM
+  the address the editor sends from can only come from something else using it, and both the
+  connection warning and a refused download say so, with the count.
+- The group monitor shows connection control as well (`TConnect`, `TDisconnect`, `TAck`), so a
+  failed download can be followed telegram by telegram in the archive.
+
 ## 0.2.5 (2026-09-13)
 
 - Assign individual address waits for the programming button: the dialog reports how many devices

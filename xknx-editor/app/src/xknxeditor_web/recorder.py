@@ -274,6 +274,19 @@ class TelegramRecorder:
 
     # --- reading -------------------------------------------------------------------------------
 
+    def incoming_from(self, address: str, since: float) -> int:
+        """Telegrams that ARRIVED from ``address`` since ``since``. Asked about the editor's own
+        individual address: anything the bus sends from it is somebody else on that address."""
+        if not address:
+            return 0
+        self.flush()
+        with self._lock:
+            row = self._db.execute(
+                "SELECT count(*) FROM telegrams WHERE source = ? AND direction = 'Incoming' AND ts >= ?",
+                (address, since),
+            ).fetchone()
+        return int(row[0] or 0)
+
     def summary(self) -> dict[str, Any]:
         with self._lock:
             row = self._db.execute("SELECT count(*), min(ts), max(ts) FROM telegrams").fetchone()

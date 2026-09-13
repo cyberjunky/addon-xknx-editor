@@ -277,3 +277,19 @@ def test_decode_raw_and_backfill(tmp_path: Path) -> None:
     assert rows["07 D0"]["num"] is None  # an address the project does not know stays raw
     assert rec.series(parse_ga("1/0/1"), now - 60, now + 60)["count"] == 3
     rec.close()
+
+
+def test_incoming_from_own_address_is_evidence_of_a_duplicate(tmp_path: Path) -> None:
+    """Anything that ARRIVES from the editor's own address is somebody else on that address."""
+    rec = TelegramRecorder(tmp_path)
+    now = time.time()
+    mine = {**telegram(now - 10, "1/0/1", True, source="1.1.2"), "direction": "Outgoing"}
+    rec.add(mine)
+    rec.add({**telegram(now - 5, "1/0/1", True, source="1.1.2"), "direction": "Incoming"})
+    rec.add({**telegram(now - 5, "1/0/1", True, source="1.1.9"), "direction": "Incoming"})
+    rec.add({**telegram(now - 40 * 3600, "1/0/1", True, source="1.1.2"), "direction": "Incoming"})
+    rec.flush()
+    assert rec.incoming_from("1.1.2", now - 86400) == 1  # not our own outgoing, not the old one
+    assert rec.incoming_from("1.1.9", now - 86400) == 1
+    assert rec.incoming_from("1.1.3", now - 86400) == 0 and rec.incoming_from("", now) == 0
+    rec.close()
