@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.8 (2026-09-16)
 
 - Device tools: Ping (does it answer, how fast), Identify (flashes the programming LED), Verify
   against project (reads the device and compares it with what a download would write), Unassign
