@@ -38,6 +38,7 @@ from xknxeditor.proj.core.events import (
     CreateLine,
     CreateSegment,
     CreateSpace,
+    Event,
     LinkComObject,
     MoveDevice,
     MoveSpace,
@@ -61,8 +62,10 @@ from xknxeditor.proj.core.events import (
     SetDeviceCommissioning,
     SetDeviceName,
     SetDeviceSpace,
+    SetDeviceText,
     SetFunctionType,
     SetGroupAddressDatapointType,
+    SetGroupAddressText,
     SetParameter,
     SetSpaceType,
     SyncDeviceComObjects,
@@ -73,6 +76,7 @@ from xknxeditor.proj.core.skeleton import MEDIUM_TP, seed_new_project
 from xknxeditor.proj.db import make_engine, url_for
 from xknxeditor.proj.models import (
     Area,
+    ComObject,
     ComObjectLink,
     Device,
     Function,
@@ -192,6 +196,8 @@ class DeviceInfo:
     communication_part_loaded: bool
     medium_config_loaded: bool
     parameters_loaded: bool
+    comment: str = ""
+    installation_hints: str = ""
 
 
 @dataclass(frozen=True)
@@ -336,8 +342,12 @@ class ProjectService:
     def set_parameter(
         self, project_id: str, device_id: int, ref_id: str, value: str
     ) -> None:
-        self._state(project_id).store.append(
-            SetParameter(device_id=device_id, ref_id=ref_id, value=value)
+        state = self._state(project_id)
+        self._append_changed(
+            state,
+            SetParameter(device_id=device_id, ref_id=ref_id, value=value),
+            [device_id],
+            "parameters_loaded",
         )
 
     def create_group_address(
@@ -436,13 +446,24 @@ class ProjectService:
             group_address_id=group_address_id,
             is_sending=sending,
         )
-        state.store.append(event)
+        self._append_changed(
+            state,
+            event,
+            self._com_object_devices(state, [com_object_id]),
+            "communication_part_loaded",
+        )
         assert event.link_id is not None
         return event.link_id
 
     def set_com_object_sending(self, project_id: str, link_id: int) -> None:
         """Set this link as the com-object's sender, clearing the bit on its siblings."""
-        self._state(project_id).store.append(SetComObjectSending(link_id=link_id))
+        state = self._state(project_id)
+        self._append_changed(
+            state,
+            SetComObjectSending(link_id=link_id),
+            self._link_devices(state, [link_id]),
+            "communication_part_loaded",
+        )
 
     def set_com_object_flag(
         self, project_id: str, com_object_id: int, flag: str, value: bool | None
@@ -452,8 +473,30 @@ class ProjectService:
         ``flag`` must be one of :data:`~xknxeditor.proj.core.events.COM_OBJECT_FLAGS`."""
         if flag not in COM_OBJECT_FLAGS:
             raise ValueError(f"Unknown com-object flag {flag!r}")
+        state = self._state(project_id)
+        self._append_changed(
+            state,
+            SetComObjectFlag(com_object_id=com_object_id, flag=flag, value=value),
+            self._com_object_devices(state, [com_object_id]),
+            "communication_part_loaded",
+        )
+
+    def set_device_text(
+        self, project_id: str, device_id: int, field: str, value: str
+    ) -> None:
+        """Set a device's ``description``, ``comment`` or ``installation_hints``."""
         self._state(project_id).store.append(
-            SetComObjectFlag(com_object_id=com_object_id, flag=flag, value=value)
+            SetDeviceText(device_id=device_id, field=field, value=value)
+        )
+
+    def set_group_address_text(
+        self, project_id: str, group_address_id: int, field: str, value: str
+    ) -> None:
+        """Set a group address's ``description`` or ``comment``."""
+        self._state(project_id).store.append(
+            SetGroupAddressText(
+                group_address_id=group_address_id, field=field, value=value
+            )
         )
 
     def set_group_address_datapoint_type(
@@ -626,12 +669,28 @@ class ProjectService:
         self._state(project_id).store.append(RemoveSegment(target_id=segment_id))
 
     def remove_group_address(self, project_id: str, group_address_id: int) -> None:
-        self._state(project_id).store.append(
-            RemoveGroupAddress(target_id=group_address_id)
+        state = self._state(project_id)
+        link_ids = [
+            link_id
+            for (link_id,) in state.session.query(ComObjectLink.id).filter_by(
+                group_address_id=group_address_id
+            )
+        ]
+        self._append_changed(
+            state,
+            RemoveGroupAddress(target_id=group_address_id),
+            self._link_devices(state, link_ids),
+            "communication_part_loaded",
         )
 
     def unlink_com_object(self, project_id: str, link_id: int) -> None:
-        self._state(project_id).store.append(UnlinkComObject(target_id=link_id))
+        state = self._state(project_id)
+        self._append_changed(
+            state,
+            UnlinkComObject(target_id=link_id),
+            self._link_devices(state, [link_id]),
+            "communication_part_loaded",
+        )
 
     def rename_area(self, project_id: str, area_id: int, name: str) -> None:
         self._state(project_id).store.append(RenameArea(area_id=area_id, name=name))
@@ -677,7 +736,9 @@ class ProjectService:
     ) -> None:
         """Set a parameter and reconcile the device's com-objects to ``target`` as ONE undo step (a
         function/mode change and the objects it activates/deactivates must revert together)."""
-        self._state(project_id).store.append(
+        state = self._state(project_id)
+        self._append_changed(
+            state,
             CompositeEvent(
                 events=[
                     SetParameter(device_id=device_id, ref_id=ref_id, value=value),
@@ -686,7 +747,10 @@ class ProjectService:
                         target=[[r, c] for r, c in target],
                     ),
                 ]
-            )
+            ),
+            [device_id],
+            "parameters_loaded",
+            "communication_part_loaded",
         )
 
     def update_device_application(
@@ -736,9 +800,14 @@ class ProjectService:
         state = self._state(project_id)
         if address is not None:
             self._check_unique_address(state, segment_id, address, exclude=device_id)
-        state.store.append(
-            MoveDevice(device_id=device_id, segment_id=segment_id, address=address)
-        )
+        device = state.session.get(Device, device_id)
+        event = MoveDevice(device_id=device_id, segment_id=segment_id, address=address)
+        if device is None or self._compose_ia(device) == self._address_of(
+            state, segment_id, address
+        ):
+            state.store.append(event)
+            return
+        self._append_changed(state, event, [device_id], "individual_address_loaded")
 
     # --- undo / redo / history --------------------------------------------
 
@@ -816,6 +885,8 @@ class ProjectService:
             communication_part_loaded=device.communication_part_loaded,
             medium_config_loaded=device.medium_config_loaded,
             parameters_loaded=device.parameters_loaded,
+            comment=device.comment,
+            installation_hints=device.installation_hints,
         )
 
     def com_object_links(self, project_id: str, com_object_id: int) -> list[LinkInfo]:
@@ -1169,6 +1240,56 @@ class ProjectService:
             return None
         line = device.segment.line
         return format_ia(line.area.address, line.address, device.address)
+
+    def _address_of(
+        self, state: _Open, segment_id: int, address: int | None
+    ) -> str | None:
+        segment = state.session.get(Segment, segment_id)
+        if address is None or segment is None:
+            return None
+        return format_ia(segment.line.area.address, segment.line.address, address)
+
+    def _com_object_devices(self, state: _Open, com_object_ids: list[int]) -> list[int]:
+        if not com_object_ids:
+            return []
+        return sorted(
+            {
+                device_id
+                for (device_id,) in state.session.query(ComObject.device_id).filter(
+                    ComObject.id.in_(com_object_ids)
+                )
+            }
+        )
+
+    def _link_devices(self, state: _Open, link_ids: list[int]) -> list[int]:
+        if not link_ids:
+            return []
+        return sorted(
+            {
+                device_id
+                for (device_id,) in state.session.query(ComObject.device_id)
+                .join(ComObjectLink, ComObjectLink.com_object_id == ComObject.id)
+                .filter(ComObjectLink.id.in_(link_ids))
+            }
+        )
+
+    def _append_changed(
+        self, state: _Open, event: Event, device_ids: list[int], *flags: str
+    ) -> None:
+        """Append ``event``; a device that had the part it changes loaded no longer has it.
+
+        Clearing the tick rides in the same undo step as the edit (a :class:`CompositeEvent`), so
+        undoing the edit restores the tick with it. Devices whose tick is already clear add
+        nothing, so an edit to an unprogrammed device stays a plain event."""
+        stale: list[Event] = []
+        for device_id in device_ids:
+            device = state.session.get(Device, device_id)
+            if device is None:
+                continue
+            cleared = {flag: False for flag in flags if getattr(device, flag)}
+            if cleared:
+                stale.append(SetDeviceCommissioning(device_id=device_id, **cleared))
+        state.store.append(CompositeEvent(events=[event, *stale]) if stale else event)
 
     def _first_segment(self, state: _Open, line: Line) -> Segment:
         segment = (

@@ -204,7 +204,7 @@ export class LinePanel extends LitElement {
               html`<tr class="dev" @click=${() => store.select(x.id)}>
                 <td class="addr">${x.individual_address}</td>
                 <td>${x.room ?? ""}</td>
-                <td>${x.name}</td>
+                <td>${x.name || x.product_name}</td>
                 <td class="muted">${x.description ?? ""}</td>
                 <td>
                   ${x.application_name || html`<span class="muted">${x.resolved ? "-" : "product data missing"}</span>`}

@@ -688,6 +688,294 @@ export const VIEWS_NL: Record<string, string> = {
     "Groepsadres toevoegen: kies een opgenomen adres of typ een adres of naam",
   "nothing numeric": "niets numeriek",
   "Not everything could be imported:": "Niet alles kon worden geïmporteerd:",
+  "A coloured line sends; telegrams light up the address they are sent to.":
+    "Een gekleurde lijn verzendt; telegrammen lichten het adres op waarnaar ze gestuurd worden.",
+  "A table of all devices grouped by room, with address, name and order number.":
+    "Een tabel van alle apparaten per ruimte, met adres, naam en bestelnummer.",
+  "Add a device…":
+    "Apparaat toevoegen…",
+  "Add all with the same application":
+    "Alle met dezelfde applicatie toevoegen",
+  "Address unassigned":
+    "Adres ingetrokken",
+  "All objects":
+    "Alle objecten",
+  "Answered in":
+    "Antwoord in",
+  "Answers on the bus (Ping)":
+    "Antwoordt op de bus (Ping)",
+  "Ask the bus which address the device with this serial number carries":
+    "Vraag de bus welk adres het apparaat met dit serienummer heeft",
+  "Bytes":
+    "Bytes",
+  "Check that something answers at this address, and how fast":
+    "Controleer of er iets antwoordt op dit adres, en hoe snel",
+  "Check which devices answer on the bus (the selected ones, or all shown)":
+    "Controleer welke apparaten antwoorden op de bus (de geselecteerde, of alle getoonde)",
+  "Collapse all":
+    "Alles inklappen",
+  "Common Device Object (index 0) properties: 11 serial number, 12 manufacturer, 13 program version, 15 order info, 54 programming mode, 56 max APDU length, 78 hardware type.":
+    "Veelgebruikte eigenschappen van het Device Object (index 0): 11 serienummer, 12 fabrikant, 13 programmaversie, 15 bestelinfo, 54 programmeermodus, 56 max. APDU-lengte, 78 hardwaretype.",
+  "Compare":
+    "Vergelijken",
+  "Compare the selected devices side by side":
+    "Vergelijk de geselecteerde apparaten naast elkaar",
+  "Compare this device with other devices, parameter by parameter":
+    "Vergelijk dit apparaat met andere apparaten, parameter voor parameter",
+  "Compare…":
+    "Vergelijken…",
+  "Connect to a gateway (top right) to see bus traffic.":
+    "Verbind met een gateway (rechtsboven) om busverkeer te zien.",
+  "Connections":
+    "Verbindingen",
+  "Count":
+    "Aantal",
+  "Data to write (hex bytes)":
+    "Te schrijven data (hex-bytes)",
+  "Datapoint types":
+    "Datapunttypen",
+  "Description and notes":
+    "Beschrijving en notities",
+  "Device labels":
+    "Apparaatetiketten",
+  "Diagnostics":
+    "Diagnose",
+  "Differences only":
+    "Alleen verschillen",
+  "Direct access to the device's memory and interface-object properties, for troubleshooting. Reads are harmless; writes change the device immediately and are not part of the project.":
+    "Directe toegang tot het geheugen en de interface-objecteigenschappen van het apparaat, voor probleemoplossing. Lezen is onschadelijk; schrijven wijzigt het apparaat meteen en maakt geen deel uit van het project.",
+  "Expand all":
+    "Alles uitklappen",
+  "Export table as CSV":
+    "Tabel exporteren als CSV",
+  "Fields on a label":
+    "Velden op een etiket",
+  "Find address by serial":
+    "Adres zoeken via serienummer",
+  "Flags C R W T U I, then the group addresses; * marks the sending one.":
+    "Vlaggen C R W T U I, daarna de groepsadressen; * markeert het zendadres.",
+  "Flash the programming LED for a few seconds, to find the device in the cabinet":
+    "Laat de programmeer-LED een paar seconden knipperen, om het apparaat in de kast te vinden",
+  "For a partly used sheet":
+    "Voor een deels gebruikt vel",
+  "Formal (DPST-9-1)":
+    "Formeel (DPST-9-1)",
+  "Formatted in ETS; saving an edit keeps the text and drops the formatting.":
+    "Opgemaakt in ETS; bij opslaan van een wijziging blijft de tekst en vervalt de opmaak.",
+  "Friendly (name)":
+    "Leesbaar (naam)",
+  "Function":
+    "Functie",
+  "Holds what the project would write (Verify)":
+    "Bevat wat het project zou schrijven (Verifiëren)",
+  "Identify":
+    "Identificeren",
+  "Installation hints":
+    "Installatie-aanwijzingen",
+  "Legend sheet (A4 table for the distribution board door)":
+    "Legendablad (A4-tabel voor de deur van de verdeelkast)",
+  "Linked only":
+    "Alleen gekoppeld",
+  "Manufacturers":
+    "Fabrikanten",
+  "Memory":
+    "Geheugen",
+  "Memory write":
+    "Geheugen schrijven",
+  "No device answered with that serial number.":
+    "Geen apparaat antwoordde met dat serienummer.",
+  "No device is in programming mode.":
+    "Geen apparaat staat in programmeermodus.",
+  "No device with an address (and, to verify, product data) to check.":
+    "Geen apparaat met een adres (en, om te verifiëren, productdata) om te controleren.",
+  "No devices in this project.":
+    "Geen apparaten in dit project.",
+  "No group object differs.":
+    "Geen groepsobject verschilt.",
+  "No group objects in this project.":
+    "Geen groepsobjecten in dit project.",
+  "No parameter differs.":
+    "Geen parameter verschilt.",
+  "No parameters.":
+    "Geen parameters.",
+  "No telegrams for this yet. They appear here as they arrive.":
+    "Nog geen telegrammen hiervoor. Ze verschijnen hier zodra ze binnenkomen.",
+  "No telegrams to show":
+    "Geen telegrammen om te tonen",
+  "Nothing answered at this address.":
+    "Niets antwoordde op dit adres.",
+  "Nothing could be compared: the application defines no memory or properties to read back.":
+    "Er viel niets te vergelijken: de applicatie definieert geen geheugen of eigenschappen om terug te lezen.",
+  "Nothing matches the filter.":
+    "Niets komt overeen met het filter.",
+  "Numeric (9.001)":
+    "Numeriek (9.001)",
+  "Object index":
+    "Objectindex",
+  "Online":
+    "Online",
+  "Parameter":
+    "Parameter",
+  "Pick two or more devices to compare their parameters and group objects. From a device, use Compare; from the Device overview, select devices and press Compare.":
+    "Kies twee of meer apparaten om hun parameters en groepsobjecten te vergelijken. Vanuit een apparaat: Vergelijken; in het Apparaatoverzicht: selecteer apparaten en klik Vergelijken.",
+  "Ping":
+    "Ping",
+  "Preview (first page)":
+    "Voorbeeld (eerste pagina)",
+  "Print":
+    "Afdrukken",
+  "Print labels":
+    "Etiketten afdrukken",
+  "Print labels…":
+    "Etiketten afdrukken…",
+  "Product data missing":
+    "Productdata ontbreekt",
+  "Program the device to bring it in line.":
+    "Programmeer het apparaat om het gelijk te trekken.",
+  "Property id":
+    "Eigenschap-id",
+  "Property write":
+    "Eigenschap schrijven",
+  "Read serial numbers":
+    "Serienummers lezen",
+  "Read the device and compare it with what the project would write; nothing is written":
+    "Lees het apparaat en vergelijk het met wat het project zou schrijven; er wordt niets geschreven",
+  "Read the devices and compare them with the project (the selected ones, or all shown); nothing is written":
+    "Lees de apparaten en vergelijk ze met het project (de geselecteerde, of alle getoonde); er wordt niets geschreven",
+  "Read the serial number of every device in programming mode":
+    "Lees het serienummer van elk apparaat in programmeermodus",
+  "Recorded":
+    "Opgenomen",
+  "Sheet format":
+    "Velformaat",
+  "Show more":
+    "Meer tonen",
+  "Show the telegrams on a time axis, one lane per source":
+    "Toon de telegrammen op een tijdas, één baan per bron",
+  "Skip first labels":
+    "Eerste etiketten overslaan",
+  "Something is there, but it refused the connection (busy, or another tool has it open).":
+    "Er is iets, maar het weigerde de verbinding (bezig, of een ander programma heeft het open).",
+  "Start (hex with 0x)":
+    "Start (hex met 0x)",
+  "Start index":
+    "Startindex",
+  "Take the address":
+    "Het adres",
+  "Take the individual address away in the project (the device stays on its line; the bus device is not touched)":
+    "Trek het fysieke adres in het project in (het apparaat blijft op zijn lijn; het apparaat op de bus wordt niet aangeraakt)",
+  "That device carries":
+    "Dat apparaat heeft",
+  "The browser blocked the print window; allow pop-ups for this page.":
+    "De browser heeft het afdrukvenster geblokkeerd; sta pop-ups toe voor deze pagina.",
+  "The device differs from the project":
+    "Het apparaat wijkt af van het project",
+  "The device holds what the project would write.":
+    "Het apparaat bevat wat het project zou schrijven.",
+  "The device stays in the project on its line, without an address, until it gets a new one. The device on the bus keeps its address until it is programmed.":
+    "Het apparaat blijft in het project op zijn lijn, zonder adres, tot het een nieuw krijgt. Het apparaat op de bus houdt zijn adres tot het geprogrammeerd wordt.",
+  "The programming LED flashed":
+    "De programmeer-LED heeft geknipperd",
+  "These devices run different applications: parameters are lined up by page and name, which is only a rough match.":
+    "Deze apparaten draaien verschillende applicaties: parameters worden naast elkaar gezet op pagina en naam, wat maar een ruwe vergelijking is.",
+  "This changes the device immediately.":
+    "Dit wijzigt het apparaat meteen.",
+  "This device has no linked group objects yet.":
+    "Dit apparaat heeft nog geen gekoppelde groepsobjecten.",
+  "Time since the previous telegram in this list":
+    "Tijd sinds het vorige telegram in deze lijst",
+  "Timeline":
+    "Tijdlijn",
+  "Unassign address":
+    "Adres intrekken",
+  "Unknown manufacturer":
+    "Onbekende fabrikant",
+  "Unlinked only":
+    "Alleen niet gekoppeld",
+  "Use this serial number":
+    "Dit serienummer gebruiken",
+  "Verified":
+    "Geverifieerd",
+  "Verified against the project":
+    "Geverifieerd tegen het project",
+  "Verify against project":
+    "Verifiëren tegen project",
+  "Waiting for telegrams…":
+    "Wachten op telegrammen…",
+  "answers, but refused the connection":
+    "antwoordt, maar weigerde de verbinding",
+  "at":
+    "op",
+  "away from":
+    "intrekken van",
+  "byte(s) and":
+    "byte(s) en",
+  "device":
+    "apparaat",
+  "devices answered":
+    "apparaten antwoordden",
+  "devices match the project":
+    "apparaten komen overeen met het project",
+  "differs":
+    "wijkt af",
+  "group addresses":
+    "groepsadressen",
+  "group object(s) differ":
+    "groepsobject(en) verschillen",
+  "into":
+    "in",
+  "mask":
+    "masker",
+  "matches":
+    "komt overeen",
+  "matches the project":
+    "komt overeen met het project",
+  "newest first, since the page was opened":
+    "nieuwste eerst, sinds de pagina geopend is",
+  "no answer":
+    "geen antwoord",
+  "no serial number":
+    "geen serienummer",
+  "not shown":
+    "niet getoond",
+  "nothing to chart in this range":
+    "niets om te tonen in deze periode",
+  "of":
+    "van",
+  "other":
+    "overig",
+  "other devices":
+    "andere apparaten",
+  "parameter(s) differ":
+    "parameter(s) verschillen",
+  "per sheet":
+    "per vel",
+  "product name, the device has no name of its own":
+    "productnaam, het apparaat heeft geen eigen naam",
+  "propert(y/ies)":
+    "eigenschap(pen)",
+  "propert(y/ies) differ":
+    "eigenschap(pen) verschillen",
+  "reachable":
+    "bereikbaar",
+  "read from the payloads, this address has no datapoint type":
+    "afgeleid uit de inhoud, dit adres heeft geen datapunttype",
+  "selected":
+    "geselecteerd",
+  "sending address":
+    "zendadres",
+  "sheet(s)":
+    "vel(len)",
+  "to property":
+    "naar eigenschap",
+  "written":
+    "geschreven",
+  "written and read back":
+    "geschreven en teruggelezen",
+  "{n} of {m}":
+    "{n} van {m}",
+  "{n} device(s) are left out: their product data is not in the catalog.":
+    "{n} apparaat/apparaten weggelaten: hun productdata staat niet in de catalogus.",
 };
 
 export const VIEWS_DE: Record<string, string> = {
@@ -1382,4 +1670,292 @@ export const VIEWS_DE: Record<string, string> = {
     "Gruppenadresse hinzufügen: eine aufgezeichnete wählen oder Adresse bzw. Name eingeben",
   "nothing numeric": "nichts Numerisches",
   "Not everything could be imported:": "Nicht alles konnte importiert werden:",
+  "A coloured line sends; telegrams light up the address they are sent to.":
+    "Eine farbige Linie sendet; Telegramme lassen die Adresse aufleuchten, an die sie gehen.",
+  "A table of all devices grouped by room, with address, name and order number.":
+    "Eine Tabelle aller Geräte nach Raum gruppiert, mit Adresse, Name und Bestellnummer.",
+  "Add a device…":
+    "Gerät hinzufügen…",
+  "Add all with the same application":
+    "Alle mit derselben Applikation hinzufügen",
+  "Address unassigned":
+    "Adresse entfernt",
+  "All objects":
+    "Alle Objekte",
+  "Answered in":
+    "Antwort in",
+  "Answers on the bus (Ping)":
+    "Antwortet auf dem Bus (Ping)",
+  "Ask the bus which address the device with this serial number carries":
+    "Den Bus fragen, welche Adresse das Gerät mit dieser Seriennummer hat",
+  "Bytes":
+    "Bytes",
+  "Check that something answers at this address, and how fast":
+    "Prüfen, ob unter dieser Adresse etwas antwortet, und wie schnell",
+  "Check which devices answer on the bus (the selected ones, or all shown)":
+    "Prüfen, welche Geräte auf dem Bus antworten (die ausgewählten oder alle angezeigten)",
+  "Collapse all":
+    "Alle zuklappen",
+  "Common Device Object (index 0) properties: 11 serial number, 12 manufacturer, 13 program version, 15 order info, 54 programming mode, 56 max APDU length, 78 hardware type.":
+    "Häufige Eigenschaften des Device Object (Index 0): 11 Seriennummer, 12 Hersteller, 13 Programmversion, 15 Bestellinfo, 54 Programmiermodus, 56 max. APDU-Länge, 78 Hardwaretyp.",
+  "Compare":
+    "Vergleichen",
+  "Compare the selected devices side by side":
+    "Die ausgewählten Geräte nebeneinander vergleichen",
+  "Compare this device with other devices, parameter by parameter":
+    "Dieses Gerät Parameter für Parameter mit anderen Geräten vergleichen",
+  "Compare…":
+    "Vergleichen…",
+  "Connect to a gateway (top right) to see bus traffic.":
+    "Mit einem Gateway verbinden (oben rechts), um den Busverkehr zu sehen.",
+  "Connections":
+    "Verbindungen",
+  "Count":
+    "Anzahl",
+  "Data to write (hex bytes)":
+    "Zu schreibende Daten (Hex-Bytes)",
+  "Datapoint types":
+    "Datenpunkttypen",
+  "Description and notes":
+    "Beschreibung und Notizen",
+  "Device labels":
+    "Geräteetiketten",
+  "Diagnostics":
+    "Diagnose",
+  "Differences only":
+    "Nur Unterschiede",
+  "Direct access to the device's memory and interface-object properties, for troubleshooting. Reads are harmless; writes change the device immediately and are not part of the project.":
+    "Direkter Zugriff auf Speicher und Interface-Objekt-Eigenschaften des Geräts, zur Fehlersuche. Lesen ist harmlos; Schreiben ändert das Gerät sofort und gehört nicht zum Projekt.",
+  "Expand all":
+    "Alle aufklappen",
+  "Export table as CSV":
+    "Tabelle als CSV exportieren",
+  "Fields on a label":
+    "Felder auf einem Etikett",
+  "Find address by serial":
+    "Adresse per Seriennummer suchen",
+  "Flags C R W T U I, then the group addresses; * marks the sending one.":
+    "Flags C R W T U I, dann die Gruppenadressen; * markiert die sendende.",
+  "Flash the programming LED for a few seconds, to find the device in the cabinet":
+    "Die Programmier-LED einige Sekunden blinken lassen, um das Gerät im Schrank zu finden",
+  "For a partly used sheet":
+    "Für einen teilweise benutzten Bogen",
+  "Formal (DPST-9-1)":
+    "Formal (DPST-9-1)",
+  "Formatted in ETS; saving an edit keeps the text and drops the formatting.":
+    "In ETS formatiert; beim Speichern einer Änderung bleibt der Text, die Formatierung entfällt.",
+  "Friendly (name)":
+    "Lesbar (Name)",
+  "Function":
+    "Funktion",
+  "Holds what the project would write (Verify)":
+    "Enthält, was das Projekt schreiben würde (Prüfen)",
+  "Identify":
+    "Identifizieren",
+  "Installation hints":
+    "Installationshinweise",
+  "Legend sheet (A4 table for the distribution board door)":
+    "Legendenblatt (A4-Tabelle für die Verteilertür)",
+  "Linked only":
+    "Nur verknüpfte",
+  "Manufacturers":
+    "Hersteller",
+  "Memory":
+    "Speicher",
+  "Memory write":
+    "Speicher schreiben",
+  "No device answered with that serial number.":
+    "Kein Gerät hat mit dieser Seriennummer geantwortet.",
+  "No device is in programming mode.":
+    "Kein Gerät ist im Programmiermodus.",
+  "No device with an address (and, to verify, product data) to check.":
+    "Kein Gerät mit Adresse (und zum Prüfen mit Produktdaten) zu prüfen.",
+  "No devices in this project.":
+    "Keine Geräte in diesem Projekt.",
+  "No group object differs.":
+    "Kein Gruppenobjekt unterscheidet sich.",
+  "No group objects in this project.":
+    "Keine Gruppenobjekte in diesem Projekt.",
+  "No parameter differs.":
+    "Kein Parameter unterscheidet sich.",
+  "No parameters.":
+    "Keine Parameter.",
+  "No telegrams for this yet. They appear here as they arrive.":
+    "Noch keine Telegramme dafür. Sie erscheinen hier, sobald sie eintreffen.",
+  "No telegrams to show":
+    "Keine Telegramme anzuzeigen",
+  "Nothing answered at this address.":
+    "Unter dieser Adresse hat nichts geantwortet.",
+  "Nothing could be compared: the application defines no memory or properties to read back.":
+    "Nichts zu vergleichen: die Applikation definiert keinen Speicher und keine Eigenschaften zum Zurücklesen.",
+  "Nothing matches the filter.":
+    "Nichts entspricht dem Filter.",
+  "Numeric (9.001)":
+    "Numerisch (9.001)",
+  "Object index":
+    "Objektindex",
+  "Online":
+    "Online",
+  "Parameter":
+    "Parameter",
+  "Pick two or more devices to compare their parameters and group objects. From a device, use Compare; from the Device overview, select devices and press Compare.":
+    "Zwei oder mehr Geräte wählen, um Parameter und Gruppenobjekte zu vergleichen. Von einem Gerät aus: Vergleichen; in der Geräteübersicht: Geräte auswählen und Vergleichen drücken.",
+  "Ping":
+    "Ping",
+  "Preview (first page)":
+    "Vorschau (erste Seite)",
+  "Print":
+    "Drucken",
+  "Print labels":
+    "Etiketten drucken",
+  "Print labels…":
+    "Etiketten drucken…",
+  "Product data missing":
+    "Produktdaten fehlen",
+  "Program the device to bring it in line.":
+    "Das Gerät programmieren, um es anzugleichen.",
+  "Property id":
+    "Eigenschafts-ID",
+  "Property write":
+    "Eigenschaft schreiben",
+  "Read serial numbers":
+    "Seriennummern lesen",
+  "Read the device and compare it with what the project would write; nothing is written":
+    "Das Gerät lesen und mit dem vergleichen, was das Projekt schreiben würde; es wird nichts geschrieben",
+  "Read the devices and compare them with the project (the selected ones, or all shown); nothing is written":
+    "Die Geräte lesen und mit dem Projekt vergleichen (die ausgewählten oder alle angezeigten); es wird nichts geschrieben",
+  "Read the serial number of every device in programming mode":
+    "Die Seriennummer jedes Geräts im Programmiermodus lesen",
+  "Recorded":
+    "Aufgezeichnet",
+  "Sheet format":
+    "Bogenformat",
+  "Show more":
+    "Mehr anzeigen",
+  "Show the telegrams on a time axis, one lane per source":
+    "Telegramme auf einer Zeitachse anzeigen, eine Spur pro Quelle",
+  "Skip first labels":
+    "Erste Etiketten überspringen",
+  "Something is there, but it refused the connection (busy, or another tool has it open).":
+    "Da ist etwas, aber es hat die Verbindung abgelehnt (beschäftigt, oder ein anderes Werkzeug hat es geöffnet).",
+  "Start (hex with 0x)":
+    "Start (hex mit 0x)",
+  "Start index":
+    "Startindex",
+  "Take the address":
+    "Die Adresse",
+  "Take the individual address away in the project (the device stays on its line; the bus device is not touched)":
+    "Die physikalische Adresse im Projekt entfernen (das Gerät bleibt auf seiner Linie; das Busgerät wird nicht berührt)",
+  "That device carries":
+    "Dieses Gerät hat",
+  "The browser blocked the print window; allow pop-ups for this page.":
+    "Der Browser hat das Druckfenster blockiert; Pop-ups für diese Seite erlauben.",
+  "The device differs from the project":
+    "Das Gerät weicht vom Projekt ab",
+  "The device holds what the project would write.":
+    "Das Gerät enthält, was das Projekt schreiben würde.",
+  "The device stays in the project on its line, without an address, until it gets a new one. The device on the bus keeps its address until it is programmed.":
+    "Das Gerät bleibt im Projekt auf seiner Linie, ohne Adresse, bis es eine neue bekommt. Das Gerät auf dem Bus behält seine Adresse, bis es programmiert wird.",
+  "The programming LED flashed":
+    "Die Programmier-LED hat geblinkt",
+  "These devices run different applications: parameters are lined up by page and name, which is only a rough match.":
+    "Diese Geräte haben verschiedene Applikationen: Parameter werden nach Seite und Name zugeordnet, das ist nur ein grober Vergleich.",
+  "This changes the device immediately.":
+    "Das ändert das Gerät sofort.",
+  "This device has no linked group objects yet.":
+    "Dieses Gerät hat noch keine verknüpften Gruppenobjekte.",
+  "Time since the previous telegram in this list":
+    "Zeit seit dem vorherigen Telegramm in dieser Liste",
+  "Timeline":
+    "Zeitachse",
+  "Unassign address":
+    "Adresse entfernen",
+  "Unknown manufacturer":
+    "Unbekannter Hersteller",
+  "Unlinked only":
+    "Nur nicht verknüpfte",
+  "Use this serial number":
+    "Diese Seriennummer verwenden",
+  "Verified":
+    "Geprüft",
+  "Verified against the project":
+    "Gegen das Projekt geprüft",
+  "Verify against project":
+    "Gegen Projekt prüfen",
+  "Waiting for telegrams…":
+    "Warten auf Telegramme…",
+  "answers, but refused the connection":
+    "antwortet, hat aber die Verbindung abgelehnt",
+  "at":
+    "an",
+  "away from":
+    "entfernen von",
+  "byte(s) and":
+    "Byte(s) und",
+  "device":
+    "Gerät",
+  "devices answered":
+    "Geräte haben geantwortet",
+  "devices match the project":
+    "Geräte entsprechen dem Projekt",
+  "differs":
+    "weicht ab",
+  "group addresses":
+    "Gruppenadressen",
+  "group object(s) differ":
+    "Gruppenobjekt(e) unterscheiden sich",
+  "into":
+    "in",
+  "mask":
+    "Maske",
+  "matches":
+    "stimmt überein",
+  "matches the project":
+    "entspricht dem Projekt",
+  "newest first, since the page was opened":
+    "neueste zuerst, seit die Seite geöffnet wurde",
+  "no answer":
+    "keine Antwort",
+  "no serial number":
+    "keine Seriennummer",
+  "not shown":
+    "nicht angezeigt",
+  "nothing to chart in this range":
+    "in diesem Zeitraum nichts darzustellen",
+  "of":
+    "von",
+  "other":
+    "sonstige",
+  "other devices":
+    "andere Geräte",
+  "parameter(s) differ":
+    "Parameter unterscheiden sich",
+  "per sheet":
+    "pro Bogen",
+  "product name, the device has no name of its own":
+    "Produktname, das Gerät hat keinen eigenen Namen",
+  "propert(y/ies)":
+    "Eigenschaft(en)",
+  "propert(y/ies) differ":
+    "Eigenschaft(en) unterscheiden sich",
+  "reachable":
+    "erreichbar",
+  "read from the payloads, this address has no datapoint type":
+    "aus den Nutzdaten gelesen, diese Adresse hat keinen Datenpunkttyp",
+  "selected":
+    "ausgewählt",
+  "sending address":
+    "sendende Adresse",
+  "sheet(s)":
+    "Bogen",
+  "to property":
+    "in Eigenschaft",
+  "written":
+    "geschrieben",
+  "written and read back":
+    "geschrieben und zurückgelesen",
+  "{n} of {m}":
+    "{n} von {m}",
+  "{n} device(s) are left out: their product data is not in the catalog.":
+    "{n} Gerät(e) ausgelassen: ihre Produktdaten sind nicht im Katalog.",
 };

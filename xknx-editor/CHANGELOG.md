@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+- Device tools: Ping (does it answer, how fast), Identify (flashes the programming LED), Verify
+  against project (reads the device and compares it with what a download would write), Unassign
+  address, and a Diagnostics tab for reading and writing raw memory and interface-object properties.
+- Assign address lists the devices in programming mode with their serial numbers, and finds the
+  address a serial number carries.
+- Device overview: select devices, ping or verify them in one go (online / verified columns), or
+  compare them.
+- Compare: two to eight devices side by side, every parameter and group object, differences
+  highlighted.
+- A device's Connections tab draws its group addresses and every other device on them; telegrams
+  light up the address they are sent to. Devices and group addresses get a Telegrams tab, live and
+  recorded.
+- New centre views: Manufacturers (manufacturer → product → devices) and Group objects (every
+  object of the project).
+- Descriptions, comments and installation hints of devices, and descriptions and comments of group
+  addresses, are editable and survive import and export; ETS's RTF comments are shown as text.
+- Editing a device's parameters, links or address clears what it had loaded, so it shows it needs a
+  download again (undo restores it).
+- File → Export table as CSV: devices, group addresses, group objects, topology, buildings,
+  manufacturers.
+- Tools → Labels prints Avery label sheets or a legend sheet for the distribution board door.
+- The group monitor has a Δ column and a timeline; View → Datapoint types shows DPTs numeric,
+  formal or by name.
+- The device editor opens on a tab named after the device (the Overview tab is gone), never shows a
+  blank page after switching devices, and shows the product name when a device has no name of its
+  own.
+
 ## 0.3.7 (2026-09-13)
 
 - An address the project never typed can still be charted: its payloads are read the way the

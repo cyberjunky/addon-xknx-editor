@@ -189,6 +189,9 @@ class Device(Base):
     space_id: Mapped[int | None] = mapped_column(ForeignKey("spaces.id"), index=True)
     # Descriptive metadata carried over from the imported .knxproj (for display without a catalog).
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # The DeviceInstance's Comment (RTF as ETS writes it) and InstallationHints, round-tripped.
+    comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    installation_hints: Mapped[str] = mapped_column(Text, nullable=False, default="")
     order_number: Mapped[str] = mapped_column(String, nullable=False, default="")
     hardware_name: Mapped[str] = mapped_column(Text, nullable=False, default="")
     product_name: Mapped[str] = mapped_column(Text, nullable=False, default="")

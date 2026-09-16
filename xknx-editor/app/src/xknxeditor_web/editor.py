@@ -695,6 +695,9 @@ class Editor:
             data["resolved"] = False
             data["error"] = str(exc)
         data["space_id"] = self._row(device_id).space_id
+        from xknxeditor_web.reports import rtf_to_text
+
+        data["comment_text"] = rtf_to_text(data.get("comment") or "")
         return data
 
     def parameters(self, device_id: int) -> dict[str, Any]:
@@ -791,6 +794,34 @@ class Editor:
     def set_individual_address(self, device_id: int, address: str) -> None:
         self.projects.set_individual_address(self._pid(), device_id, address)
         self._bump(structural=True, device=device_id)
+
+    def unassign_address(self, device_id: int) -> None:
+        """Take the device's individual address away in the project; it stays on its line."""
+        row = self._row(device_id)
+        if row.address is None:
+            return
+        self.projects.move_device(self._pid(), device_id, row.segment_id, None)
+        self._bump(structural=True, device=device_id)
+
+    TEXT_FIELDS = ("description", "comment", "installation_hints")
+
+    def set_device_text(self, device_id: int, field: str, value: str) -> None:
+        if field not in self.TEXT_FIELDS:
+            raise ApiError(f"Unknown device text {field!r}; one of {', '.join(self.TEXT_FIELDS)}")
+        self._row(device_id)
+        self.projects.set_device_text(self._pid(), device_id, field, value)
+        self._bump(structural=False, device=device_id)
+
+    def set_group_address_text(self, ga_id: int, field: str, value: str) -> None:
+        if field not in ("description", "comment"):
+            raise ApiError(f"Unknown group address text {field!r}; one of description, comment")
+        self.projects.set_group_address_text(self._pid(), ga_id, field, value)
+        self._bump(structural=False)
+
+    def device_traffic(self, device_id: int) -> dict[str, Any]:
+        from xknxeditor_web.reports import device_traffic
+
+        return device_traffic(self, device_id)
 
     def remove_device(self, device_id: int) -> None:
         self.projects.remove_device(self._pid(), device_id)
@@ -1002,6 +1033,9 @@ class Editor:
                 }
             )
         data["assignments"] = assignments
+        from xknxeditor_web.reports import rtf_to_text
+
+        data["comment_text"] = rtf_to_text(data.get("comment") or "")
         return data
 
     def create_group_address(

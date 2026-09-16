@@ -4,6 +4,7 @@ import { api, ApiError, type GroupAddress } from "../api.js";
 import { icon } from "../icons.js";
 import { store } from "../store.js";
 import { t as tr } from "../i18n.js";
+import "./telegram-list.js";
 
 type Assignment = {
   link_id: number;
@@ -15,7 +16,11 @@ type Assignment = {
   object_name: string;
   is_sending: boolean;
 };
-type Detail = GroupAddress & { assignments: Assignment[] };
+type Detail = GroupAddress & {
+  assignments: Assignment[];
+  comment?: string;
+  comment_text?: string;
+};
 
 /** Centre-dock editor for one group address: name, DPT, description, and its assignments. */
 @customElement("xknx-ga-panel")
@@ -159,7 +164,22 @@ export class GaPanel extends LitElement {
           .value=${d.datapoint_type ?? ""}
           @dpt-change=${(e: CustomEvent<{ value: string }>) => this.act(() => api.patch(`api/group-addresses/${d.id}`, { datapoint_type: e.detail.value || null }))}
         ></xknx-dpt-picker>
-        ${d.description ? html`<div class="wide"><span class="addr">${tr("Description")}</span><br />${d.description}</div>` : nothing}
+        <sl-input
+          class="wide"
+          size="small"
+          label=${tr("Description")}
+          value=${d.description ?? ""}
+          @sl-change=${(e: Event) => this.act(() => api.patch(`api/group-addresses/${d.id}`, { description: (e.target as HTMLInputElement).value }))}
+        ></sl-input>
+        <sl-textarea
+          class="wide"
+          size="small"
+          rows="2"
+          resize="auto"
+          label=${tr("Comment")}
+          value=${d.comment_text ?? d.comment ?? ""}
+          @sl-change=${(e: Event) => this.act(() => api.patch(`api/group-addresses/${d.id}`, { comment: (e.target as HTMLTextAreaElement).value }))}
+        ></sl-textarea>
       </div>
       <table>
         <tr>
@@ -200,6 +220,9 @@ export class GaPanel extends LitElement {
         )}
       </table>
       ${d.assignments.length ? nothing : html`<div class="empty">${tr("Not linked to any group object. Link it from a device's Group objects tab.")}</div>`}
+      <sl-details summary=${tr("Telegrams")} style="margin-top:16px">
+        <xknx-telegram-list .ga=${d.text}></xknx-telegram-list>
+      </sl-details>
       <div class="row">
         <sl-button
           size="small"

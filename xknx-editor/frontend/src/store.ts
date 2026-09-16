@@ -12,7 +12,10 @@ export type CenterTab =
   | "secure"
   | "docs"
   | "ai"
-  | "network";
+  | "network"
+  | "compare"
+  | "manufacturers"
+  | "objects";
 export type RightTab = "history" | "project" | "health";
 export type BottomTab = "monitor" | "charts" | "stats" | "catalog";
 export type Gateway = {
@@ -120,6 +123,8 @@ class Store {
   /** A group address someone asked to see charted (monitor row, GA editor, statistics). Durable
    * for the same reason as `overviewIssue`: the Charts view may or may not be mounted yet. */
   chartRequest: { ga: string; name: string } | null = null;
+  /** Devices the Compare view shows side by side. */
+  compareIds: number[] = [];
   left: LeftTab = "topology";
   center: CenterTab = "editor";
   right: RightTab = "project";
@@ -216,6 +221,12 @@ class Store {
     this.bottom = tab;
     this.bottomOpen = true;
     this.persist();
+  }
+
+  /** Open the Compare view on these devices (it lets the user add more). */
+  openCompare(ids: number[]): void {
+    this.compareIds = [...new Set(ids)];
+    this.setCenter("compare");
   }
 
   /** Show a group address in the Charts dock. */

@@ -9,6 +9,7 @@ import {
 import { icon } from "../icons.js";
 import { store } from "../store.js";
 import { t as tr } from "../i18n.js";
+import { dptTitle, formatDpt, onDptNames } from "../dpt-format.js";
 
 type Obj = {
   device_id: number;
@@ -192,10 +193,12 @@ export class MassLinkerView extends LitElement {
   @state() private pairAddress = "";
   @state() private pairName = "";
   private unsubscribe = () => {};
+  private unsubscribeDpt = () => {};
   private rev = -1;
 
   connectedCallback(): void {
     super.connectedCallback();
+    this.unsubscribeDpt = onDptNames(() => this.requestUpdate());
     this.unsubscribe = store.subscribe(() => {
       this.requestUpdate();
       void this.sync();
@@ -205,6 +208,7 @@ export class MassLinkerView extends LitElement {
 
   disconnectedCallback(): void {
     this.unsubscribe();
+    this.unsubscribeDpt();
     super.disconnectedCallback();
   }
 
@@ -443,8 +447,8 @@ export class MassLinkerView extends LitElement {
                     <td>
                       ${r.obj.name}${r.obj.function_text && r.obj.function_text !== r.obj.name ? html` <span class="muted">${r.obj.function_text}</span>` : nothing}
                     </td>
-                    <td class="muted">
-                      ${r.obj.dpt_codes[0] ?? r.obj.object_size}
+                    <td class="muted" title=${dptTitle(r.obj.dpt_codes[0])}>
+                      ${r.obj.dpt_codes[0] ? formatDpt(r.obj.dpt_codes[0]) : r.obj.object_size}
                     </td>
                     <td class="muted">
                       ${r.obj.links.map((l) => l.text).join(", ") || "–"}
@@ -591,7 +595,7 @@ export class MassLinkerView extends LitElement {
               }}
               >${icon("plus", 14)} ${tr("Add pair")}</sl-button
             >
-            ${src && dst && src.dpt_major !== null && dst.dpt_major !== null && src.dpt_major !== dst.dpt_major ? html`<span class="incompatible">Datapoint types differ (${src.dpt_codes[0]} vs ${dst.dpt_codes[0]})</span>` : nothing}
+            ${src && dst && src.dpt_major !== null && dst.dpt_major !== null && src.dpt_major !== dst.dpt_major ? html`<span class="incompatible">Datapoint types differ (${formatDpt(src.dpt_codes[0])} vs ${formatDpt(dst.dpt_codes[0])})</span>` : nothing}
           </div>
           ${
             this.pairs.length

@@ -49,6 +49,9 @@ async def patch_device(request: Request) -> Any:
         await ed.worker.run(ed.set_individual_address, _id(request), need(data, "individual_address"))
     if "space_id" in data:
         await ed.worker.run(ed.set_device_space, _id(request), opt(data, "space_id", int))
+    for field in ed.TEXT_FIELDS:
+        if field in data:
+            await ed.worker.run(ed.set_device_text, _id(request), field, opt(data, field, str, ""))
     return await ed.worker.run(ed.device, _id(request))
 
 
@@ -326,8 +329,228 @@ async def restart_device(request: Request) -> Any:
     return {"restarted": d["individual_address"]}
 
 
+async def _address(request: Request, device_id: int) -> str:
+    ed = _ed(request)
+    d = await ed.worker.run(ed.device, device_id)
+    if not d.get("individual_address"):
+        raise ApiError("The device has no individual address", 409)
+    return d["individual_address"]
+
+
+async def _on_device(request: Request, what: str, call: Callable[[Any, str], Awaitable[Any]]) -> Any:
+    """Run one management exchange with the selected device, with the usual explanations."""
+    from xknxeditor_web import programming as prog
+
+    xknx = _xknx(request)
+    address = await _address(request, _id(request))
+    try:
+        async with prog.explained(xknx, address, _clash(request)):
+            return await call(xknx, address)
+    except ApiError:
+        raise
+    except prog.ProgrammingError as exc:
+        raise ApiError(str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - bus errors surface as 502
+        raise ApiError(f"{what} failed: {type(exc).__name__}: {exc}", 502) from exc
+
+
+async def ping_device(request: Request) -> Any:
+    from xknxeditor_web import programming as prog
+
+    xknx = _xknx(request)
+    address = await _address(request, _id(request))
+    try:
+        return await prog.ping(xknx, address)
+    except Exception as exc:  # noqa: BLE001
+        raise ApiError(f"Ping failed: {type(exc).__name__}: {exc}", 502) from exc
+
+
+async def identify_device(request: Request) -> Any:
+    from xknxeditor_web import programming as prog
+
+    data = await body(request)
+    seconds = max(1, min(opt(data, "seconds", int, 6), 30))
+    return await _on_device(request, "Identify", lambda x, a: prog.identify(x, a, seconds))
+
+
+async def memory_read(request: Request) -> Any:
+    from xknxeditor_web import programming as prog
+
+    data = await body(request)
+    start, count = need(data, "start", int), need(data, "count", int)
+    return await _on_device(request, "Memory read", lambda x, a: prog.read_memory(x, a, start, count))
+
+
+async def memory_write(request: Request) -> Any:
+    from xknxeditor_web import programming as prog
+
+    data = await body(request)
+    start = need(data, "start", int)
+    try:
+        payload = prog.parse_hex(need(data, "data"))
+    except prog.ProgrammingError as exc:
+        raise ApiError(str(exc)) from exc
+    return await _on_device(request, "Memory write", lambda x, a: prog.write_memory(x, a, start, payload))
+
+
+async def property_read(request: Request) -> Any:
+    from xknxeditor_web import programming as prog
+
+    data = await body(request)
+    obj, pid = need(data, "object_index", int), need(data, "property_id", int)
+    count, start = opt(data, "count", int, 1), opt(data, "start_index", int, 1)
+    return await _on_device(request, "Property read", lambda x, a: prog.read_property(x, a, obj, pid, count, start))
+
+
+async def property_write(request: Request) -> Any:
+    from xknxeditor_web import programming as prog
+
+    data = await body(request)
+    obj, pid = need(data, "object_index", int), need(data, "property_id", int)
+    count, start = opt(data, "count", int, 1), opt(data, "start_index", int, 1)
+    try:
+        payload = prog.parse_hex(need(data, "data"))
+    except prog.ProgrammingError as exc:
+        raise ApiError(str(exc)) from exc
+    return await _on_device(request, "Property write", lambda x, a: prog.write_property(x, a, obj, pid, payload, count, start))
+
+
+async def connections(request: Request) -> Any:
+    from xknxeditor_web.reports import device_connections
+
+    ed = _ed(request)
+    return await ed.worker.run(device_connections, ed, _id(request))
+
+
+async def compare(request: Request) -> Any:
+    from xknxeditor_web.reports import compare_devices
+
+    ed = _ed(request)
+    raw = request.query_params.get("ids", "")
+    try:
+        ids = [int(v) for v in raw.split(",") if v.strip()]
+    except ValueError as exc:
+        raise ApiError("ids must be comma-separated device ids") from exc
+    return await ed.worker.run(compare_devices, ed, ids)
+
+
+async def unassign(request: Request) -> Any:
+    ed = _ed(request)
+    await ed.worker.run(ed.unassign_address, _id(request))
+    return await ed.worker.run(ed.device, _id(request))
+
+
+async def _verify_one(request: Request, device_id: int) -> dict[str, Any]:
+    from xknxeditor_web import programming as prog
+
+    ed = _ed(request)
+    xknx = _xknx(request)
+    prepared = await ed.worker.run(prog.prepare, ed, device_id, _keyring(request))
+    master = await ed.worker.run(prog.master_for, ed)
+    async with prog.explained(xknx, prepared.address, _clash(request)):
+        report = await prog.run_preflight(xknx, prepared, prog.DownloadScope.FULL, master)
+    return prog.verdict(report)
+
+
+async def verify(request: Request) -> Any:
+    """Read the device and compare it with what the project would write (nothing is written)."""
+    jobs: JobManager = request.app.state.jobs
+    _xknx(request)
+    device_id = _id(request)
+
+    async def run(job: Job) -> Any:
+        jobs.report(job, None, "reading the device and comparing it with the project")
+        return await _verify_one(request, device_id)
+
+    return jobs.submit_async("verify", run, device_id=device_id).to_dict()
+
+
+def _device_ids(data: dict[str, Any]) -> list[int]:
+    raw = data.get("device_ids")
+    if not isinstance(raw, list) or not raw:
+        raise ApiError("device_ids must be a non-empty list")
+    try:
+        return [int(v) for v in raw]
+    except (TypeError, ValueError) as exc:
+        raise ApiError("device_ids must be a list of device ids") from exc
+
+
+async def ping_many(request: Request) -> Any:
+    """Ping devices one after the other: the online check of an installation."""
+    from xknxeditor_web import programming as prog
+
+    ed = _ed(request)
+    jobs: JobManager = request.app.state.jobs
+    data = await body(request)
+    ids = _device_ids(data)
+    xknx = _xknx(request)
+
+    async def run(job: Job) -> Any:
+        summaries = {d["id"]: d for d in await ed.worker.run(ed.devices)}
+        items: list[dict[str, Any]] = []
+        for n, device_id in enumerate(ids):
+            d = summaries.get(device_id)
+            address = d["individual_address"] if d else None
+            jobs.report(job, n / len(ids), f"pinging {address or device_id} ({n + 1} of {len(ids)})")
+            if not address:
+                items.append({"device_id": device_id, "address": None, "reachable": None, "error": "no individual address"})
+                continue
+            try:
+                items.append({"device_id": device_id, **await prog.ping(xknx, address), "error": None})
+            except Exception as exc:  # noqa: BLE001 - reported per device
+                items.append({"device_id": device_id, "address": address, "reachable": None, "error": f"{type(exc).__name__}: {exc}"})
+        return {"items": items, "reachable": sum(1 for i in items if i.get("reachable")), "count": len(items)}
+
+    return jobs.submit_async("ping", run, count=len(ids)).to_dict()
+
+
+async def verify_many(request: Request) -> Any:
+    ed = _ed(request)
+    jobs: JobManager = request.app.state.jobs
+    data = await body(request)
+    ids = _device_ids(data)
+    _xknx(request)
+
+    async def run(job: Job) -> Any:
+        summaries = {d["id"]: d for d in await ed.worker.run(ed.devices)}
+        items: list[dict[str, Any]] = []
+        for n, device_id in enumerate(ids):
+            d = summaries.get(device_id) or {}
+            jobs.report(job, n / len(ids), f"verifying {d.get('individual_address') or device_id} ({n + 1} of {len(ids)})")
+            try:
+                r = await _verify_one(request, device_id)
+                items.append(
+                    {
+                        "device_id": device_id,
+                        "address": d.get("individual_address"),
+                        "matches": r["matches"],
+                        "changed_bytes": r["changed_bytes"],
+                        "changed_properties": r["changed_properties"],
+                        "compared": r["compared"],
+                        "error": None,
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001 - reported per device
+                items.append({"device_id": device_id, "address": d.get("individual_address"), "matches": None, "error": str(exc)})
+        return {"items": items, "matches": sum(1 for i in items if i["matches"]), "count": len(items)}
+
+    return jobs.submit_async("verify-many", run, count=len(ids)).to_dict()
+
+
 def routes() -> list[Route]:
     return [
+        route("/api/devices/ping", ping_many, ["POST"]),
+        route("/api/devices/compare", compare),
+        route("/api/devices/{id:int}/connections", connections),
+        route("/api/devices/verify", verify_many, ["POST"]),
+        route("/api/devices/{id:int}/ping", ping_device, ["POST"]),
+        route("/api/devices/{id:int}/identify", identify_device, ["POST"]),
+        route("/api/devices/{id:int}/verify", verify, ["POST"]),
+        route("/api/devices/{id:int}/memory/read", memory_read, ["POST"]),
+        route("/api/devices/{id:int}/memory/write", memory_write, ["POST"]),
+        route("/api/devices/{id:int}/property/read", property_read, ["POST"]),
+        route("/api/devices/{id:int}/property/write", property_write, ["POST"]),
+        route("/api/devices/{id:int}/unassign", unassign, ["POST"]),
         route("/api/devices/{id:int}/memory", memory),
         route("/api/devices/{id:int}/manual", manual),
         route("/api/devices/{id:int}/preflight", preflight, ["POST"]),

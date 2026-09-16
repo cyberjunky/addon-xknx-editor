@@ -4,6 +4,8 @@ import { api, ApiError } from "../api.js";
 import { icon } from "../icons.js";
 import { store, type TelegramRecord } from "../store.js";
 import { t as tr } from "../i18n.js";
+import { dptTitle, formatDpt, onDptNames } from "../dpt-format.js";
+import "./telegram-timeline.js";
 
 /** "DPST-13-10" → "13.010", "DPT-1" → "1.xxx". */
 export function dptShort(dpt: string): string {
@@ -61,6 +63,27 @@ export function guessValue(raw: string): { text: string; dpt: string } | null {
     return { text: String(view.getInt32(0)), dpt: "13.xxx" };
   }
   return null;
+}
+
+/** The gap between two telegrams: "+120 ms", "+3.4 s", "+2 min". */
+export function formatDelta(seconds: number): string {
+  const s = Math.max(0, seconds);
+  if (s < 1) return `+${Math.round(s * 1000)} ms`;
+  if (s < 10) return `+${s.toFixed(1)} s`;
+  if (s < 60) return `+${Math.round(s)} s`;
+  if (s < 3600) return `+${Math.round(s / 60)} min`;
+  if (s < 86400) return `+${(s / 3600).toFixed(1).replace(/\.0$/, "")} h`;
+  return `+${(s / 86400).toFixed(1).replace(/\.0$/, "")} d`;
+}
+
+const TIMELINE_KEY = "xknx.monitor.timeline";
+
+function loadTimeline(): boolean {
+  try {
+    return localStorage.getItem(TIMELINE_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 
 function round(v: number): string {
@@ -146,10 +169,14 @@ export class MonitorView extends LitElement {
       gap: 5px;
     }
     :host {
-      display: grid;
-      grid-template-rows: auto 1fr;
+      display: flex;
+      flex-direction: column;
       height: 100%;
       font-size: 13px;
+    }
+    .toolbar,
+    xknx-telegram-timeline {
+      flex: none;
     }
     .toolbar {
       display: flex;
@@ -168,7 +195,13 @@ export class MonitorView extends LitElement {
       width: 100px;
     }
     .list {
+      flex: 1;
+      min-height: 0;
       overflow: auto;
+    }
+    td.delta {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
     }
     table {
       border-collapse: collapse;
@@ -258,7 +291,9 @@ export class MonitorView extends LitElement {
   @state() private summary: Summary | null = null;
   @state() private settingsOpen = false;
   @state() private busy = false;
+  @state() private timeline = loadTimeline();
   private unsubscribe = () => {};
+  private unsubscribeDpt = () => {};
   private debounce: number | undefined;
 
   private get running(): boolean {
@@ -275,6 +310,7 @@ export class MonitorView extends LitElement {
       this.stopOnProjectChange();
       this.requestUpdate();
     });
+    this.unsubscribeDpt = onDptNames(() => this.requestUpdate());
     // Deliberately no backlog fetch: a page load starts clean. A run in progress is picked up
     // from the store, so only the first mount of a session freezes an empty list.
     this.stopOnProjectChange();
@@ -283,6 +319,7 @@ export class MonitorView extends LitElement {
 
   disconnectedCallback(): void {
     this.unsubscribe();
+    this.unsubscribeDpt();
     super.disconnectedCallback();
   }
 
@@ -305,6 +342,21 @@ export class MonitorView extends LitElement {
   private missed(): number {
     const last = this.frozen?.at(-1)?.id ?? store.monitor.sinceId;
     return store.telegrams.filter((t) => t.id > last).length;
+  }
+
+  private toggleTimeline(): void {
+    this.timeline = !this.timeline;
+    try {
+      localStorage.setItem(TIMELINE_KEY, this.timeline ? "1" : "0");
+    } catch {
+      /* storage unavailable */
+    }
+  }
+
+  /** A dot picked on the timeline narrows the list to its destination. */
+  private onPick(e: CustomEvent<TelegramRecord>): void {
+    this.address = e.detail.destination;
+    this.scheduleArchive();
   }
 
   private start(): void {
@@ -482,9 +534,18 @@ export class MonitorView extends LitElement {
 
   private renderRows(items: TelegramRecord[], withDate: boolean) {
     const projectOpen = !!store.bus.decoding?.project;
+    // The live list runs oldest first, the archive newest first: the delta is always to the
+    // telegram that came before in time.
+    const previous = (i: number) => items[withDate ? i + 1 : i - 1];
     return html`<table>
       <tr>
         <th>${tr("Time")}</th>
+        <th
+          title=${tr("Time since the previous telegram in this list")}
+          style="text-align:right"
+        >
+          Δ
+        </th>
         <th>${tr("Source")}</th>
         <th>${tr("Destination")}</th>
         <th>${tr("Name")}</th>
@@ -494,24 +555,25 @@ export class MonitorView extends LitElement {
         <th>${tr("Raw")}</th>
         <th></th>
       </tr>
-      ${items.map(
-        (t) =>
-          html`<tr>
+      ${items.map((t, i) => {
+        const prev = previous(i);
+        return html`<tr>
             <td class="muted">${withDate ? t.time : t.time.slice(-8)}</td>
+            <td class="muted delta">${prev ? formatDelta(t.ts - prev.ts) : ""}</td>
             <td class="addr">${t.source}</td>
             <td class="addr">${t.destination}</td>
             <td>${t.destination_name ?? ""}</td>
             <td class="apci">${t.apci}</td>
             <td>${this.renderValue(t, projectOpen)}</td>
-            <td class="muted">
-              ${t.destination_dpt ? dptShort(t.destination_dpt) : t.destination_kind === "group" ? html`<span class="guess">${guessValue(t.raw)?.dpt ?? ""}</span>` : ""}
+            <td class="muted" title=${dptTitle(t.destination_dpt)}>
+              ${t.destination_dpt ? formatDpt(t.destination_dpt) : t.destination_kind === "group" ? html`<span class="guess">${guessValue(t.raw)?.dpt ?? ""}</span>` : ""}
             </td>
             <td class="addr muted">${t.raw}</td>
             <td class="act">
               ${chartable(t) ? html`<sl-button size="small" variant="text" title=${tr("Chart this address")} @click=${() => store.requestChart(t.destination, t.destination_name ?? "")}>${icon("chart", 14)}</sl-button>` : nothing}
             </td>
-          </tr>`,
-      )}
+          </tr>`;
+      })}
     </table>`;
   }
 
@@ -651,6 +713,14 @@ export class MonitorView extends LitElement {
             this.scheduleArchive();
           }}
         ></sl-input>
+        <sl-button
+          size="small"
+          variant=${this.timeline ? "primary" : "default"}
+          outline
+          title=${tr("Show the telegrams on a time axis, one lane per source")}
+          @click=${() => this.toggleTimeline()}
+          >${tr("Timeline")}</sl-button
+        >
         ${live ? this.renderLiveControls(liveItems.length) : this.renderArchiveControls()}
         <span style="flex:1"></span>
         <sl-input
@@ -680,6 +750,14 @@ export class MonitorView extends LitElement {
           >${tr("Write")}</sl-button
         >
       </div>
+      ${
+        this.timeline
+          ? html`<xknx-telegram-timeline
+              .items=${live ? liveItems : this.items}
+              @telegram-pick=${(e: CustomEvent<TelegramRecord>) => this.onPick(e)}
+            ></xknx-telegram-timeline>`
+          : nothing
+      }
       <div class="list">
         ${live ? this.renderLive(liveItems, connected) : this.renderArchive()}
       </div>

@@ -6,7 +6,8 @@ import { api, ApiError, type GroupAddress } from "../api.js";
 import { icon } from "../icons.js";
 import { store, type TelegramRecord } from "../store.js";
 import { t as tr } from "../i18n.js";
-import { PRESETS, dptShort, localInput, presetRange } from "./monitor-view.js";
+import { PRESETS, localInput, presetRange } from "./monitor-view.js";
+import { dptTitle, formatDpt, onDptNames } from "../dpt-format.js";
 
 /** [time, avg, min, max]; raw points carry the same value three times. */
 type Point = [number, number, number, number];
@@ -207,10 +208,12 @@ export class ChartsView extends LitElement {
   private lastTelegram = 0;
   private redraw: number | undefined;
   private scheme: MediaQueryList | null = null;
+  private unsubscribeDpt = () => {};
 
   connectedCallback(): void {
     super.connectedCallback();
     this.unsubscribe = store.subscribe(() => this.onStore());
+    this.unsubscribeDpt = onDptNames(() => this.requestUpdate());
     void this.loadRecorded();
     void this.loadGas();
     this.onStore();
@@ -220,6 +223,7 @@ export class ChartsView extends LitElement {
 
   disconnectedCallback(): void {
     this.unsubscribe();
+    this.unsubscribeDpt();
     this.scheme?.removeEventListener("change", this.onTheme);
     this.resize?.disconnect();
     this.plot?.destroy();
@@ -559,7 +563,7 @@ export class ChartsView extends LitElement {
                   class="matches"
                   @mousedown=${(e: Event) => e.preventDefault()}
                 >
-                  ${matches.map((c) => html`<div @click=${() => this.add(c.text, c.name)}><span class="addr">${c.text}</span> ${c.name}${c.dpt ? html` <span class="muted">${dptShort(c.dpt)}</span>` : nothing}${c.count ? html` <span class="muted">· ${c.count.toLocaleString()} ${tr("telegrams")}${c.numeric ? "" : ` (${tr("nothing numeric")})`}</span>` : nothing}</div>`)}
+                  ${matches.map((c) => html`<div @click=${() => this.add(c.text, c.name)}><span class="addr">${c.text}</span> ${c.name}${c.dpt ? html` <span class="muted" title=${dptTitle(c.dpt)}>${formatDpt(c.dpt)}</span>` : nothing}${c.count ? html` <span class="muted">· ${c.count.toLocaleString()} ${tr("telegrams")}${c.numeric ? "" : ` (${tr("nothing numeric")})`}</span>` : nothing}</div>`)}
                 </div>`
               : nothing
           }
@@ -669,7 +673,7 @@ export class ChartsView extends LitElement {
                     </td>
                     <td class="addr">${s.ga}</td>
                     <td>${s.name}</td>
-                    <td class="muted">${s.dpt ? dptShort(s.dpt) : ""}</td>
+                    <td class="muted" title=${dptTitle(s.dpt)}>${formatDpt(s.dpt)}</td>
                     <td class="num">${s.count.toLocaleString()}</td>
                     <td class="num">${fmt(st.min)}${u}</td>
                     <td class="num">${fmt(st.max)}${u}</td>

@@ -178,6 +178,8 @@ class _RawExtras:
         self.module_args: ModuleArgsMap = {}
         # ETS project-log entries, in document order (captured verbatim; comment stays encrypted).
         self.traces: list[_TraceEntry] = []
+        # DeviceInstance @Id -> (Comment, InstallationHints); xknxproject keeps neither.
+        self.device_texts: dict[str, tuple[str, str]] = {}
 
 
 def _parse(
@@ -232,6 +234,10 @@ def _read_device_extras(contents: _ProjectContents) -> _RawExtras:
         modules = _read_module_args(device)
         if modules:
             extras.module_args[device_id] = modules
+        comment = device.get("Comment") or ""
+        hints = device.get("InstallationHints") or ""
+        if comment or hints:
+            extras.device_texts[device_id] = (comment, hints)
     return extras
 
 
@@ -439,6 +445,8 @@ def _build_device(xdevice: DeviceInstance, state: _ImportState) -> Device:
         product_ref_id=xdevice.product_ref,
         hardware2program_ref_id=xdevice.hardware_program_ref,
         description=xdevice.description,
+        comment=state.extras.device_texts.get(xdevice.identifier, ("", ""))[0],
+        installation_hints=state.extras.device_texts.get(xdevice.identifier, ("", ""))[1],
         order_number=xdevice.order_number,
         hardware_name=xdevice.hardware_name,
         product_name=xdevice.product_name,

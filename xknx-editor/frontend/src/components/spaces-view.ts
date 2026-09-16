@@ -253,7 +253,7 @@ export class SpacesView extends LitElement {
             >
               ${icon("cpu", 12)}<span class="addr"
                 >${d.individual_address ?? "-.-.-"}</span
-              >${d.name}<span class="actions"
+              >${d.name || d.product_name}<span class="actions"
                 ><sl-button
                   size="small"
                   circle

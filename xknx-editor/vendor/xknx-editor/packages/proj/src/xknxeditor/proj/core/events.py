@@ -1180,6 +1180,86 @@ class SetDeviceName(Event):
         return cls(**data)
 
 
+DEVICE_TEXT_FIELDS = ("description", "comment", "installation_hints")
+GROUP_ADDRESS_TEXT_FIELDS = ("description", "comment")
+
+
+@_register
+@dataclass
+class SetDeviceText(Event):
+    """Set one of a device's free texts (``description``, ``comment``, ``installation_hints``)."""
+
+    event_type: ClassVar[str] = "SetDeviceText"
+
+    device_id: int
+    field: str
+    value: str
+    old_value: str | None = None
+
+    def apply(self, session: Session) -> None:
+        if self.field not in DEVICE_TEXT_FIELDS:
+            raise ValueError(f"Unknown device text {self.field!r}")
+        device = session.get(Device, self.device_id)
+        if device is not None:
+            self.old_value = getattr(device, self.field)
+            setattr(device, self.field, self.value)
+
+    def revert(self, session: Session) -> None:
+        device = session.get(Device, self.device_id)
+        if device is not None and self.old_value is not None:
+            setattr(device, self.field, self.old_value)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "device_id": self.device_id,
+            "field": self.field,
+            "value": self.value,
+            "old_value": self.old_value,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SetDeviceText:
+        return cls(**data)
+
+
+@_register
+@dataclass
+class SetGroupAddressText(Event):
+    """Set a group address's ``description`` or ``comment``."""
+
+    event_type: ClassVar[str] = "SetGroupAddressText"
+
+    group_address_id: int
+    field: str
+    value: str
+    old_value: str | None = None
+
+    def apply(self, session: Session) -> None:
+        if self.field not in GROUP_ADDRESS_TEXT_FIELDS:
+            raise ValueError(f"Unknown group address text {self.field!r}")
+        ga = session.get(GroupAddress, self.group_address_id)
+        if ga is not None:
+            self.old_value = getattr(ga, self.field)
+            setattr(ga, self.field, self.value)
+
+    def revert(self, session: Session) -> None:
+        ga = session.get(GroupAddress, self.group_address_id)
+        if ga is not None and self.old_value is not None:
+            setattr(ga, self.field, self.old_value)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "group_address_id": self.group_address_id,
+            "field": self.field,
+            "value": self.value,
+            "old_value": self.old_value,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SetGroupAddressText:
+        return cls(**data)
+
+
 @_register
 @dataclass
 class MoveDevice(Event):

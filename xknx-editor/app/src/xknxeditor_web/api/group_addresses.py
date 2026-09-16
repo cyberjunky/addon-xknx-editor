@@ -51,6 +51,9 @@ async def patch_ga(request: Request) -> Any:
         await ed.worker.run(ed.rename_group_address, ga_id, need(data, "name"))
     if "datapoint_type" in data:
         await ed.worker.run(ed.set_group_address_dpt, ga_id, opt(data, "datapoint_type", str))
+    for field in ("description", "comment"):
+        if field in data:
+            await ed.worker.run(ed.set_group_address_text, ga_id, field, opt(data, field, str, ""))
     return await ed.worker.run(ed.group_address, ga_id)
 
 

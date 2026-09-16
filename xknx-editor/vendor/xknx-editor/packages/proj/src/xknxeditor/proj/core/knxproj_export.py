@@ -885,6 +885,8 @@ class _Writer:
             ProductRefId=device.product_ref_id,
             Hardware2ProgramRefId=device.hardware2program_ref_id,
             Description=device.description or None,
+            Comment=device.comment or None,
+            InstallationHints=device.installation_hints or None,
             # Commissioning state ("loaded" ticks + serial / last download). Emit the flags
             # only when set; an absent attribute means "not loaded" (matching genuine exports and
             # round-trips).

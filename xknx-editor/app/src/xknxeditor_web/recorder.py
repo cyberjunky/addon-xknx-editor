@@ -358,6 +358,8 @@ class TelegramRecorder:
         kind: str | None = None,
         q: str | None = None,
         ga_any: list[int] | None = None,
+        involving: str | None = None,
+        involving_gas: list[int] | None = None,
     ) -> tuple[str, list[Any]]:
         clauses: list[str] = []
         args: list[Any] = []
@@ -382,6 +384,13 @@ class TelegramRecorder:
         if ga_any is not None:  # a DPT filter resolved to addresses; an empty list matches nothing
             clauses.append(f"ga IN ({','.join('?' * len(ga_any)) or 'NULL'})")
             args += ga_any
+        if involving:  # one device: what it sent, what was sent to it, and its group addresses
+            gas = involving_gas or []
+            text = "source = ? OR destination = ?"
+            if gas:
+                text += f" OR ga IN ({','.join('?' * len(gas))})"
+            clauses.append(f"({text})")
+            args += [involving, involving, *gas]
         if q:
             like = f"%{q}%"
             text = "(destination LIKE ? OR source LIKE ? OR apci LIKE ? OR value LIKE ? OR raw LIKE ?)"
@@ -405,13 +414,15 @@ class TelegramRecorder:
         kind: str | None = None,
         q: str | None = None,
         ga_any: list[int] | None = None,
+        involving: str | None = None,
+        involving_gas: list[int] | None = None,
         cursor: int | None = None,
         limit: int = 200,
     ) -> dict[str, Any]:
         """Newest first, keyset-paginated on id: pass the returned ``next_cursor`` to continue."""
         limit = max(1, min(int(limit), MAX_LIMIT))
         self.flush()
-        where, args = self._where(since, until, ga, ga_prefix, ga_in, source, kind, q, ga_any)
+        where, args = self._where(since, until, ga, ga_prefix, ga_in, source, kind, q, ga_any, involving, involving_gas)
         page_where = where + (" AND " if where else " WHERE ") + "id < ?" if cursor else where
         page_args = [*args, cursor] if cursor else args
         with self._lock:
@@ -435,6 +446,7 @@ class TelegramRecorder:
         where, args = self._where(
             filters.get("since"), filters.get("until"), filters.get("ga"), filters.get("ga_prefix"),
             filters.get("ga_in"), filters.get("source"), filters.get("kind"), filters.get("q"), filters.get("ga_any"),
+            filters.get("involving"), filters.get("involving_gas"),
         )
         names = names or {}
         buf = io.StringIO()

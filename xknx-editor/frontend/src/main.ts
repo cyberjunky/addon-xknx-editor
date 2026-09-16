@@ -55,3 +55,8 @@ import "./components/spaces-view.js";
 import "./components/space-panel.js";
 import "./components/line-panel.js";
 import "./components/devices-list.js";
+import "./components/compare-view.js";
+import "./components/manufacturers-view.js";
+import "./components/objects-view.js";
+import "./components/telegram-list.js";
+import "./components/device-connections.js";

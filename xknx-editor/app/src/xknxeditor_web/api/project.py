@@ -180,6 +180,38 @@ async def topology(request: Request) -> Any:
     return await ed.worker.run(ed.topology, query_int(request, "installation", 0))
 
 
+async def objects(request: Request) -> Any:
+    from xknxeditor_web.reports import project_objects
+
+    ed = request.app.state.editor
+    return await ed.worker.run(project_objects, ed)
+
+
+async def manufacturers(request: Request) -> Any:
+    from xknxeditor_web.reports import manufacturers as grouped
+
+    ed = request.app.state.editor
+    return await ed.worker.run(grouped, ed)
+
+
+async def export_csv(request: Request) -> Any:
+    import time
+
+    from starlette.responses import PlainTextResponse
+
+    from xknxeditor_web.reports import export_csv as build
+
+    ed = request.app.state.editor
+    kind = request.path_params["kind"]
+    text = await ed.worker.run(build, ed, kind)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    return PlainTextResponse(
+        "﻿" + text,  # a BOM, so Excel reads the file as UTF-8
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{kind}-{stamp}.csv"'},
+    )
+
+
 async def devices(request: Request) -> Any:
     ed = _ed(request)
     items = await ed.worker.run(ed.devices)
@@ -289,6 +321,9 @@ def routes() -> list[Route]:
         route("/api/project/upload", upload_project, ["PUT", "POST"]),
         route("/api/project/topology", topology),
         route("/api/project/devices", devices),
+        route("/api/project/objects", objects),
+        route("/api/project/manufacturers", manufacturers),
+        route("/api/export/{kind:str}.csv", export_csv),
         route("/api/project/network", network),
         route("/api/project/undo", undo, ["POST"]),
         route("/api/project/redo", redo, ["POST"]),

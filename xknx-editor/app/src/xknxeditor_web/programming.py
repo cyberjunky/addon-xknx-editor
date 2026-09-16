@@ -461,3 +461,170 @@ async def programming_mode_devices(xknx: XKNX, timeout: float = 3.0) -> list[str
 
     found = await nm_individual_address_read(xknx, timeout=timeout)
     return [str(a) for a in found]
+
+
+_PID_SERIAL_NUMBER = 11
+# Where a BCU 1 / BCU 2 keeps its programming-mode bit (bit 0 of the RunError/ProgMode octet).
+_BCU_PROGMODE_ADDRESS = 0x0060
+
+
+def parse_serial(text: str) -> bytes:
+    """``00:FA:12 34 56 78`` / ``00FA12345678`` -> 6 bytes."""
+    cleaned = re.sub(r"[\s:.-]", "", text or "")
+    if not re.fullmatch(r"[0-9A-Fa-f]{12}", cleaned):
+        raise ProgrammingError("A KNX serial number has 6 bytes (12 hex digits)")
+    return bytes.fromhex(cleaned)
+
+
+def parse_hex(text: str) -> bytes:
+    """``01 02 0a`` / ``01020A`` -> bytes; refuses anything that is not whole bytes."""
+    cleaned = re.sub(r"[\s:,-]", "", text or "").removeprefix("0x")
+    if not cleaned or len(cleaned) % 2 or not re.fullmatch(r"[0-9A-Fa-f]+", cleaned):
+        raise ProgrammingError("Give the data as hex bytes, for example 01 FF 20")
+    return bytes.fromhex(cleaned)
+
+
+@contextlib.asynccontextmanager
+async def _programmer(xknx: XKNX, address: str) -> AsyncIterator[Any]:
+    """A DeviceProgrammer on a management connection that is always closed again."""
+    from xknx.telegram import IndividualAddress
+    from xknxeditor.download import DeviceProgrammer
+
+    target = IndividualAddress(address)
+    connection = await xknx.management.connect(target)
+    try:
+        yield DeviceProgrammer(connection)
+    finally:
+        with contextlib.suppress(Exception):
+            await xknx.management.disconnect(target)
+
+
+async def ping(xknx: XKNX, address: str) -> dict[str, Any]:
+    """Is anything answering at ``address``? A device descriptor read on a management connection,
+    timed. A device that refuses the connection is there too (it only says it is busy)."""
+    import time
+
+    start = time.monotonic()
+    try:
+        async with _programmer(xknx, address) as programmer:
+            mask = await programmer.read_device_descriptor()
+    except ManagementConnectionRefused:
+        return {"address": address, "reachable": True, "refused": True, "rtt_ms": round((time.monotonic() - start) * 1000), "mask_version": None}
+    except (ManagementConnectionTimeout, TimeoutError):
+        return {"address": address, "reachable": False, "refused": False, "rtt_ms": None, "mask_version": None}
+    return {
+        "address": address,
+        "reachable": True,
+        "refused": False,
+        "rtt_ms": round((time.monotonic() - start) * 1000),
+        "mask_version": f"{mask:04X}" if isinstance(mask, int) else str(mask),
+    }
+
+
+async def identify(xknx: XKNX, address: str, seconds: float = 6.0, sleep: Callable[[float], Awaitable[None]] | None = None) -> dict[str, Any]:
+    """Flash the programming LED so the device can be found in the cabinet: programming mode on
+    and off once a second, and always off at the end. Property-based devices take it through the
+    Device Object's PID_PROGMODE; a BCU 1 / BCU 2 only through its memory, which is the fallback."""
+    import asyncio
+
+    from xknx.exceptions import XKNXException
+    from xknxeditor.download.errors import DownloadError
+
+    wait = sleep or asyncio.sleep
+    async with _programmer(xknx, address) as programmer:
+
+        async def by_property(on: bool) -> None:
+            await programmer.write_property(0, _PID_PROGMODE, bytes([1 if on else 0]))
+
+        async def by_memory(on: bool) -> None:
+            await programmer.write_memory(_BCU_PROGMODE_ADDRESS, bytes([1 if on else 0]))
+
+        method = "property"
+        setter = by_property
+        try:
+            await setter(True)
+        except (DownloadError, XKNXException):
+            method, setter = "memory", by_memory
+            await setter(True)
+        on = True
+        try:
+            for _ in range(max(1, round(seconds)) * 2 - 1):
+                await wait(0.5)
+                on = not on
+                await setter(on)
+        finally:
+            if on:
+                with contextlib.suppress(Exception):
+                    await setter(False)
+    return {"address": address, "method": method, "seconds": max(1, round(seconds))}
+
+
+async def read_memory(xknx: XKNX, address: str, start: int, count: int) -> dict[str, Any]:
+    if not 0 <= start <= 0xFFFFFFFF or not 1 <= count <= 4096:
+        raise ProgrammingError("Memory: start 0-0xFFFFFFFF, 1-4096 bytes")
+    async with _programmer(xknx, address) as programmer:
+        data = await programmer.read_memory(start, count)
+    return {"address": address, "start": start, "count": len(data), "hex": data.hex().upper()}
+
+
+async def write_memory(xknx: XKNX, address: str, start: int, data: bytes) -> dict[str, Any]:
+    """Write and read back: a lost write is reported rather than assumed."""
+    if not 0 <= start <= 0xFFFFFFFF or not 1 <= len(data) <= 1024:
+        raise ProgrammingError("Memory: start 0-0xFFFFFFFF, 1-1024 bytes")
+    async with _programmer(xknx, address) as programmer:
+        await programmer.write_memory(start, data, verify=True)
+    return {"address": address, "start": start, "count": len(data), "verified": True}
+
+
+async def read_property(xknx: XKNX, address: str, object_index: int, property_id: int, count: int = 1, start_index: int = 1) -> dict[str, Any]:
+    if not 0 <= object_index <= 255 or not 0 <= property_id <= 255 or not 0 <= count <= 15 or not 0 <= start_index <= 4095:
+        raise ProgrammingError("Property: object 0-255, property 0-255, count 0-15, start 0-4095")
+    async with _programmer(xknx, address) as programmer:
+        data = await programmer.read_property(object_index, property_id, count=count, start_index=start_index)
+    return {"address": address, "object_index": object_index, "property_id": property_id, "count": count, "start_index": start_index, "hex": data.hex().upper()}
+
+
+async def write_property(xknx: XKNX, address: str, object_index: int, property_id: int, data: bytes, count: int = 1, start_index: int = 1) -> dict[str, Any]:
+    if not 0 <= object_index <= 255 or not 0 <= property_id <= 255 or not 1 <= count <= 255 or not 1 <= start_index <= 4095:
+        raise ProgrammingError("Property: object 0-255, property 0-255, count 1-255, start 1-4095")
+    async with _programmer(xknx, address) as programmer:
+        result = await programmer.write_property(object_index, property_id, data, count=count, start_index=start_index)
+    return {"address": address, "object_index": object_index, "property_id": property_id, "hex": result.hex().upper()}
+
+
+async def programming_mode_serials(xknx: XKNX, timeout: float = 3.0) -> list[dict[str, Any]]:
+    """The devices in programming mode with their serial numbers (read from the Device Object; a
+    device that does not have the property, or refuses, is listed without one)."""
+    items: list[dict[str, Any]] = []
+    for address in await programming_mode_devices(xknx, timeout):
+        serial: str | None = None
+        error: str | None = None
+        try:
+            async with _programmer(xknx, address) as programmer:
+                raw = await programmer.read_property(0, _PID_SERIAL_NUMBER)
+                serial = raw.hex().upper() if raw else None
+        except Exception as exc:  # noqa: BLE001 - one silent device must not hide the others
+            error = f"{type(exc).__name__}: {exc}"
+        items.append({"address": address, "serial_number": serial, "error": error})
+    return items
+
+
+async def address_by_serial(xknx: XKNX, serial: bytes, timeout: float = 3.0) -> str | None:
+    """The individual address the device with this serial number carries (broadcast)."""
+    from xknx.management.procedures.network.nm_individual_address_serial_number_read import (
+        nm_individual_address_serial_number_read,
+    )
+
+    found = await nm_individual_address_serial_number_read(xknx, serial, timeout=timeout)
+    return str(found) if found is not None else None
+
+
+def verdict(report: dict[str, Any]) -> dict[str, Any]:
+    """A preflight report read as a check: does the device hold what the project would write?"""
+    compared = len(report.get("segments", [])) + len(report.get("properties", []))
+    differs = report.get("changed_bytes", 0) or report.get("changed_properties", 0)
+    return {
+        **report,
+        "compared": compared,
+        "matches": compared > 0 and not differs,
+    }

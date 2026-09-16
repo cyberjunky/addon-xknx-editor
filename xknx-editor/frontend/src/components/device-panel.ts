@@ -8,9 +8,12 @@ import {
   type Job,
   type UiNode,
 } from "../api.js";
+import { dptTitle, formatDpt, onDptNames } from "../dpt-format.js";
 import { icon } from "../icons.js";
 import { store } from "../store.js";
+import "./device-connections.js";
 import "./docs-view.js";
+import "./telegram-list.js";
 import { t as tr } from "../i18n.js";
 
 type Device = {
@@ -24,6 +27,9 @@ type Device = {
   order_number: string;
   hardware_name: string;
   description: string;
+  comment?: string;
+  comment_text?: string;
+  installation_hints?: string;
   serial_number?: string;
   last_download?: string | null;
   individual_address_loaded?: boolean;
@@ -71,6 +77,27 @@ type Preflight = {
   changed_properties: number;
   changed_bytes: number;
 };
+
+type Verify = Preflight & { compared: number; matches: boolean };
+
+type Ping = {
+  address: string;
+  reachable: boolean;
+  refused: boolean;
+  rtt_ms: number | null;
+  mask_version: string | null;
+};
+
+type Serial = { address: string; serial_number: string | null; error: string | null };
+
+/** A group address as text ("1/2/3", "1/515" or "2563") to its raw 16-bit value. */
+export function gaValue(text: string): number | null {
+  const parts = text.split("/").map(Number);
+  if (parts.some((n) => !Number.isInteger(n))) return null;
+  if (parts.length === 3) return (parts[0] << 11) | (parts[1] << 8) | parts[2];
+  if (parts.length === 2) return (parts[0] << 11) | parts[1];
+  return parts.length === 1 ? parts[0] : null;
+}
 
 type Memory = {
   segments: {
@@ -332,6 +359,19 @@ export class DevicePanel extends LitElement {
   @state() private assignSerial = "";
   private programmingPoll: number | undefined;
   @state() private addressError = "";
+  /** The tab on show; kept so a re-render never leaves the group without an active panel. */
+  @state() private tab = "overview";
+  @state() private verify: Verify | null = null;
+  @state() private ping: Ping | null = null;
+  @state() private serials: Serial[] | null = null;
+  @state() private serialLookup: {
+    address: string | null;
+    project_device: string | null;
+  } | null = null;
+  @state() private confirmUnassign = false;
+  // Diagnostics: raw memory and property access.
+  @state() private diagOutput: { label: string; hex: string }[] = [];
+  private unsubscribeDpt = () => {};
   private unsubscribe = () => {};
   private loaded = { id: -1, rev: -1 };
 
@@ -341,10 +381,12 @@ export class DevicePanel extends LitElement {
       this.requestUpdate();
       void this.sync();
     });
+    this.unsubscribeDpt = onDptNames(() => this.requestUpdate());
   }
 
   disconnectedCallback(): void {
     this.unsubscribe();
+    this.unsubscribeDpt();
     this.watchProgramming(false);
     super.disconnectedCallback();
   }
@@ -376,8 +418,34 @@ export class DevicePanel extends LitElement {
       this.addressError = "";
       this.overview = null;
       this.preflight = null;
+      this.verify = null;
+      this.ping = null;
+      this.diagOutput = [];
       void this.sync(true);
     }
+    this.keepTab();
+  }
+
+  /** Shoelace's tab group loses its active tab when tabs come and go under it (a device whose
+   * product data resolves, switching between devices); show the remembered one, or the first. */
+  private keepTab(): void {
+    const group = this.renderRoot.querySelector("sl-tab-group") as
+      | (HTMLElement & { show(panel: string): void })
+      | null;
+    if (!group) return;
+    const panels = [...group.querySelectorAll("sl-tab-panel")].map(
+      (p) => (p as HTMLElement).getAttribute("name") ?? "",
+    );
+    const wanted = panels.includes(this.tab) ? this.tab : "overview";
+    const active = group.querySelector("sl-tab[active]")?.getAttribute("panel");
+    if (active !== wanted)
+      requestAnimationFrame(() => {
+        try {
+          group.show(wanted);
+        } catch {
+          /* not upgraded yet */
+        }
+      });
   }
 
   private syncToken = 0;
@@ -628,21 +696,47 @@ export class DevicePanel extends LitElement {
     const connected = store.bus.state === "CONNECTED";
     const busTitle = connected ? "" : "Connect to a gateway first (top right)";
     const params = d.parameter_count ?? this.countParams(this.tree);
+    const shown = d.name || d.product_name || d.hardware_name;
+    const linkedGas = [
+      ...new Set(
+        this.comObjects.flatMap((co) =>
+          co.links
+            .map((l) => gaValue(l.text))
+            .filter((v): v is number => v !== null),
+        ),
+      ),
+    ];
     return html`
-      <sl-tab-group class="device">
-        <span slot="nav" class="devname"
-          ><span class="addr">${d.individual_address ?? "-"}</span>
-          ${d.name}</span
+      <sl-tab-group
+        class="device"
+        @sl-tab-show=${(e: CustomEvent<{ name: string }>) => {
+          if (e.target === e.currentTarget) this.tab = e.detail.name;
+        }}
+      >
+        <sl-tab slot="nav" panel="overview" ?active=${this.tab === "overview"}
+          ><span class="devname"
+            ><span class="addr">${d.individual_address ?? "-.-.-"}</span>
+            ${shown}</span
+          ></sl-tab
         >
-        <sl-tab slot="nav" panel="overview">${tr("Overview")}</sl-tab>
-        ${d.resolved ? html`<sl-tab slot="nav" panel="parameters">${tr("Parameters")} (${params})</sl-tab><sl-tab slot="nav" panel="objects">${tr("Group objects")} (${this.comObjects.length})</sl-tab>` : nothing}
-        ${d.resolved && d.dali ? html`<sl-tab slot="nav" panel="dali">${tr("DALI bus")}</sl-tab>` : nothing}
+        ${d.resolved ? html`<sl-tab slot="nav" panel="parameters" ?active=${this.tab === "parameters"}>${tr("Parameters")} (${params})</sl-tab><sl-tab slot="nav" panel="objects" ?active=${this.tab === "objects"}>${tr("Group objects")} (${this.comObjects.length})</sl-tab><sl-tab slot="nav" panel="connections" ?active=${this.tab === "connections"}>${tr("Connections")}</sl-tab>` : nothing}
+        <sl-tab slot="nav" panel="telegrams" ?active=${this.tab === "telegrams"}
+          >${tr("Telegrams")}</sl-tab
+        >
+        <sl-tab
+          slot="nav"
+          panel="diagnostics"
+          ?active=${this.tab === "diagnostics"}
+          >${tr("Diagnostics")}</sl-tab
+        >
+        ${d.resolved && d.dali ? html`<sl-tab slot="nav" panel="dali" ?active=${this.tab === "dali"}>${tr("DALI bus")}</sl-tab>` : nothing}
         <sl-tab-panel name="overview">
           <div class="grid">
             <label>${tr("Name")}</label>
             <sl-input
               size="small"
               value=${d.name}
+              placeholder=${d.name ? "" : `${shown} (${tr("product name, the device has no name of its own")})`}
               @sl-change=${(e: Event) => this.act(() => api.patch(`api/devices/${d.id}`, { name: (e.target as HTMLInputElement).value }))}
             ></sl-input>
             <label>${tr("Individual address")}</label>
@@ -749,6 +843,8 @@ export class DevicePanel extends LitElement {
                 ?loading=${this.busy === "assign"}
                 @click=${() => {
                   this.assignSerial = "";
+                  this.serials = null;
+                  this.serialLookup = null;
                   this.assignDialog = true;
                   this.watchProgramming(true);
                 }}
@@ -775,6 +871,108 @@ export class DevicePanel extends LitElement {
               ></sl-tooltip
             >
           </div>
+          <div class="row">
+            <sl-tooltip
+              content=${busTitle || tr("Check that something answers at this address, and how fast")}
+            >
+              <sl-button
+                size="small"
+                ?disabled=${!connected || !d.individual_address || this.busy !== null}
+                ?loading=${this.busy === "ping"}
+                @click=${() =>
+                  this.busAction("ping", async () => {
+                    this.ping = await api.post<Ping>(
+                      `api/devices/${d.id}/ping`,
+                      {},
+                    );
+                  })}
+                >${tr("Ping")}</sl-button
+              >
+            </sl-tooltip>
+            <sl-tooltip
+              content=${busTitle || tr("Flash the programming LED for a few seconds, to find the device in the cabinet")}
+            >
+              <sl-button
+                size="small"
+                ?disabled=${!connected || !d.individual_address || this.busy !== null}
+                ?loading=${this.busy === "identify"}
+                @click=${() =>
+                  this.busAction("identify", async () => {
+                    await api.post(`api/devices/${d.id}/identify`, {
+                      seconds: 6,
+                    });
+                    store.say(tr("The programming LED flashed"), "success");
+                  })}
+                >${tr("Identify")}</sl-button
+              >
+            </sl-tooltip>
+            <sl-tooltip
+              content=${busTitle || tr("Read the device and compare it with what the project would write; nothing is written")}
+            >
+              <sl-button
+                size="small"
+                ?disabled=${!connected || !d.resolved || this.busy !== null}
+                ?loading=${this.busy === "verify"}
+                @click=${() =>
+                  this.busAction("verify", async () => {
+                    const j = await this.job(() =>
+                      api.post<Job>(`api/devices/${d.id}/verify`, {}),
+                    );
+                    this.verify = j.result as Verify;
+                  })}
+                >${tr("Verify against project")}</sl-button
+              >
+            </sl-tooltip>
+            <sl-tooltip
+              content=${tr("Compare this device with other devices, parameter by parameter")}
+            >
+              <sl-button
+                size="small"
+                ?disabled=${!d.resolved}
+                @click=${() => store.openCompare([d.id])}
+                >${tr("Compare…")}</sl-button
+              >
+            </sl-tooltip>
+            <sl-tooltip
+              content=${tr("Take the individual address away in the project (the device stays on its line; the bus device is not touched)")}
+            >
+              <sl-button
+                size="small"
+                ?disabled=${!d.individual_address}
+                @click=${() => (this.confirmUnassign = true)}
+                >${tr("Unassign address")}</sl-button
+              >
+            </sl-tooltip>
+          </div>
+          ${this.ping ? this.renderPing(this.ping) : nothing}
+          ${this.verify ? this.renderVerify(this.verify) : nothing}
+          <sl-details summary=${tr("Description and notes")} ?open=${!!(d.description || d.comment || d.installation_hints)}>
+            <div class="grid">
+              <label>${tr("Description")}</label>
+              <sl-input
+                size="small"
+                value=${d.description ?? ""}
+                @sl-change=${(e: Event) => this.act(() => api.patch(`api/devices/${d.id}`, { description: (e.target as HTMLInputElement).value }))}
+              ></sl-input>
+              <label>${tr("Comment")}</label>
+              <sl-textarea
+                size="small"
+                rows="3"
+                resize="auto"
+                value=${d.comment_text ?? d.comment ?? ""}
+                help-text=${d.comment && d.comment.trimStart().startsWith("{\\rtf") ? tr("Formatted in ETS; saving an edit keeps the text and drops the formatting.") : ""}
+                @sl-change=${(e: Event) => this.act(() => api.patch(`api/devices/${d.id}`, { comment: (e.target as HTMLTextAreaElement).value }))}
+              ></sl-textarea>
+              <label>${tr("Installation hints")}</label>
+              <sl-textarea
+                size="small"
+                rows="2"
+                resize="auto"
+                value=${d.installation_hints ?? ""}
+                @sl-change=${(e: Event) => this.act(() => api.patch(`api/devices/${d.id}`, { installation_hints: (e.target as HTMLTextAreaElement).value }))}
+              ></sl-textarea>
+            </div>
+          </sl-details>
           <sl-details summary=${tr("Manufacturer")} open>
             <table class="info">
               <tr>
@@ -803,10 +1001,6 @@ export class DevicePanel extends LitElement {
               <tr>
                 <th>${tr("Product")}</th>
                 <td>${d.product_name || "-"}</td>
-              </tr>
-              <tr>
-                <th>${tr("Description")}</th>
-                <td>${d.description || "-"}</td>
               </tr>
               <tr>
                 <th>${tr("Product ref")}</th>
@@ -919,13 +1113,157 @@ export class DevicePanel extends LitElement {
                 <sl-tab-panel name="objects"
                   >${this.renderObjects()}</sl-tab-panel
                 >
+                <sl-tab-panel name="connections"
+                  >${this.tab === "connections" ? html`<xknx-device-connections .deviceId=${d.id}></xknx-device-connections>` : nothing}</sl-tab-panel
+                >
                 ${d.dali ? html`<sl-tab-panel name="dali"><xknx-dali-panel .deviceId=${d.id}></xknx-dali-panel></sl-tab-panel>` : nothing}`
             : nothing
         }
+        <sl-tab-panel name="telegrams"
+          >${this.tab === "telegrams" ? html`<xknx-telegram-list .deviceId=${d.id} .address=${d.individual_address ?? ""} .gas=${linkedGas}></xknx-telegram-list>` : nothing}</sl-tab-panel
+        >
+        <sl-tab-panel name="diagnostics"
+          >${this.tab === "diagnostics" ? this.renderDiagnostics(d, connected, busTitle) : nothing}</sl-tab-panel
+        >
       </sl-tab-group>
       ${this.renderLinkDialog()} ${this.renderProgramDialog()}
-      ${this.renderMemoryDialog()}
+      ${this.renderMemoryDialog()} ${this.renderUnassignDialog()}
     `;
+  }
+
+  private renderPing(p: Ping) {
+    const text = !p.reachable
+      ? tr("Nothing answered at this address.")
+      : p.refused
+        ? tr("Something is there, but it refused the connection (busy, or another tool has it open).")
+        : `${tr("Answered in")} ${p.rtt_ms} ms · ${tr("mask")} ${p.mask_version}`;
+    return html`<p class="row">
+      <sl-badge variant=${p.reachable ? "success" : "danger"} pill
+        >${p.reachable ? tr("reachable") : tr("no answer")}</sl-badge
+      >
+      <span class="addr">${p.address}</span> ${text}
+    </p>`;
+  }
+
+  private renderVerify(v: Verify) {
+    const summary = v.matches
+      ? tr("The device holds what the project would write.")
+      : v.compared === 0
+        ? tr("Nothing could be compared: the application defines no memory or properties to read back.")
+        : `${tr("The device differs from the project")}: ${v.changed_bytes} ${tr("byte(s) and")} ${v.changed_properties} ${tr("propert(y/ies)")}. ${tr("Program the device to bring it in line.")}`;
+    return html`<sl-details open>
+      <span slot="summary"
+        ><sl-badge variant=${v.matches ? "success" : "warning"} pill
+          >${v.matches ? tr("matches") : tr("differs")}</sl-badge
+        >
+        ${tr("Verified against the project")}</span
+      >
+      <p>${summary}</p>
+      ${v.matches ? nothing : this.renderPreflightBody(v)}
+    </sl-details>`;
+  }
+
+  private async diag(label: string, path: string, body: Record<string, unknown>): Promise<void> {
+    await this.busAction("diag", async () => {
+      const r = await api.post<{ hex?: string; verified?: boolean }>(
+        `api/devices/${this.deviceId}/${path}`,
+        body,
+      );
+      this.diagOutput = [
+        { label, hex: r.hex ?? (r.verified ? tr("written and read back") : tr("written")) },
+        ...this.diagOutput,
+      ].slice(0, 20);
+    });
+  }
+
+  private num(id: string): number {
+    const raw = (this.renderRoot.querySelector(`#${id}`) as HTMLInputElement | null)?.value.trim() ?? "";
+    return raw.toLowerCase().startsWith("0x") ? parseInt(raw, 16) : Number(raw);
+  }
+
+  private text(id: string): string {
+    return (this.renderRoot.querySelector(`#${id}`) as HTMLInputElement | null)?.value.trim() ?? "";
+  }
+
+  private renderDiagnostics(d: Device, connected: boolean, busTitle: string) {
+    const disabled = !connected || !d.individual_address || this.busy !== null;
+    return html`
+      <p class="muted">
+        ${tr("Direct access to the device's memory and interface-object properties, for troubleshooting. Reads are harmless; writes change the device immediately and are not part of the project.")}
+        ${busTitle ? html`<br />${busTitle}` : nothing}
+      </p>
+      <sl-details summary=${tr("Memory")} open>
+        <div class="row">
+          <sl-input id="mem-start" size="small" label=${tr("Start (hex with 0x)")} value="0x0000" style="width:140px"></sl-input>
+          <sl-input id="mem-count" size="small" type="number" min="1" max="4096" label=${tr("Bytes")} value="16" style="width:100px"></sl-input>
+          <sl-button size="small" style="align-self:flex-end" ?disabled=${disabled} ?loading=${this.busy === "diag"}
+            @click=${() => {
+              const start = this.num("mem-start");
+              const count = this.num("mem-count");
+              void this.diag(`${tr("Memory")} 0x${start.toString(16).toUpperCase()} +${count}`, "memory/read", { start, count });
+            }}>${tr("Read")}</sl-button>
+        </div>
+        <div class="row">
+          <sl-input id="mem-data" size="small" label=${tr("Data to write (hex bytes)")} placeholder="01 02 FF" style="min-width:260px"></sl-input>
+          <sl-button size="small" variant="danger" outline style="align-self:flex-end" ?disabled=${disabled}
+            @click=${() => {
+              const start = this.num("mem-start");
+              const data = this.text("mem-data");
+              if (!data || !confirm(`${tr("Write")} ${data} ${tr("at")} 0x${start.toString(16).toUpperCase()} ${tr("into")} ${d.individual_address}? ${tr("This changes the device immediately.")}`)) return;
+              void this.diag(`${tr("Memory write")} 0x${start.toString(16).toUpperCase()}`, "memory/write", { start, data });
+            }}>${tr("Write")}</sl-button>
+        </div>
+      </sl-details>
+      <sl-details summary=${tr("Property")} open>
+        <div class="row">
+          <sl-input id="prop-obj" size="small" type="number" min="0" max="255" label=${tr("Object index")} value="0" style="width:110px"></sl-input>
+          <sl-input id="prop-pid" size="small" type="number" min="0" max="255" label=${tr("Property id")} value="11" style="width:110px"></sl-input>
+          <sl-input id="prop-count" size="small" type="number" min="0" max="15" label=${tr("Count")} value="1" style="width:90px"></sl-input>
+          <sl-input id="prop-start" size="small" type="number" min="0" max="4095" label=${tr("Start index")} value="1" style="width:100px"></sl-input>
+          <sl-button size="small" style="align-self:flex-end" ?disabled=${disabled} ?loading=${this.busy === "diag"}
+            @click=${() => {
+              const body = { object_index: this.num("prop-obj"), property_id: this.num("prop-pid"), count: this.num("prop-count"), start_index: this.num("prop-start") };
+              void this.diag(`${tr("Property")} ${body.object_index}/${body.property_id}`, "property/read", body);
+            }}>${tr("Read")}</sl-button>
+        </div>
+        <div class="row">
+          <sl-input id="prop-data" size="small" label=${tr("Data to write (hex bytes)")} placeholder="01" style="min-width:260px"></sl-input>
+          <sl-button size="small" variant="danger" outline style="align-self:flex-end" ?disabled=${disabled}
+            @click=${() => {
+              const body = { object_index: this.num("prop-obj"), property_id: this.num("prop-pid"), count: Math.max(1, this.num("prop-count")), start_index: Math.max(1, this.num("prop-start")), data: this.text("prop-data") };
+              if (!body.data || !confirm(`${tr("Write")} ${body.data} ${tr("to property")} ${body.object_index}/${body.property_id} ${tr("of")} ${d.individual_address}? ${tr("This changes the device immediately.")}`)) return;
+              void this.diag(`${tr("Property write")} ${body.object_index}/${body.property_id}`, "property/write", body);
+            }}>${tr("Write")}</sl-button>
+        </div>
+        <p class="muted">${tr("Common Device Object (index 0) properties: 11 serial number, 12 manufacturer, 13 program version, 15 order info, 54 programming mode, 56 max APDU length, 78 hardware type.")}</p>
+      </sl-details>
+      ${this.diagOutput.length ? html`<pre class="hex">${this.diagOutput.map((o) => `${o.label}\n  ${o.hex.match(/.{1,2}/g)?.join(" ") ?? o.hex}\n`).join("")}</pre>` : nothing}
+    `;
+  }
+
+  private renderUnassignDialog() {
+    const d = this.device;
+    return html`<sl-dialog
+      label=${tr("Unassign address")}
+      ?open=${this.confirmUnassign}
+      @sl-after-hide=${() => (this.confirmUnassign = false)}
+    >
+      <p>
+        ${tr("Take the address")} <b>${d?.individual_address ?? ""}</b>
+        ${tr("away from")} <b>${d?.name || d?.product_name}</b>?
+        ${tr("The device stays in the project on its line, without an address, until it gets a new one. The device on the bus keeps its address until it is programmed.")}
+      </p>
+      <sl-button slot="footer" @click=${() => (this.confirmUnassign = false)}>${tr("Cancel")}</sl-button>
+      <sl-button
+        slot="footer"
+        variant="primary"
+        @click=${() => {
+          this.confirmUnassign = false;
+          void this.act(() => api.post(`api/devices/${this.deviceId}/unassign`), tr("Address unassigned"));
+        }}
+        >${tr("Unassign")}</sl-button
+      >
+    </sl-dialog>`;
   }
 
   private renderOverview(o: Overview) {
@@ -974,6 +1312,12 @@ export class DevicePanel extends LitElement {
       open
     >
       ${p.changed_bytes === 0 && p.changed_properties === 0 ? html`<p class="muted">${tr("The device already holds this configuration.")}</p>` : nothing}
+      ${this.renderPreflightBody(p)}
+    </sl-details>`;
+  }
+
+  private renderPreflightBody(p: Preflight) {
+    return html`
       ${p.segments
         .filter((s) => s.changed_bytes)
         .map(
@@ -986,7 +1330,7 @@ export class DevicePanel extends LitElement {
 ${this.hexDiff(s.current, s.planned, s.address)}</pre>`,
         )}
       ${p.properties.filter((x) => x.changed).map((x) => html`<p><b>${tr("Property")}</b> object ${x.object_index} · PID ${x.property_id}: <code>${x.current || "∅"}</code> → <code class="diff">${x.planned}</code></p>`)}
-    </sl-details>`;
+    `;
   }
 
   private hexDiff(current: string, planned: string, base: number) {
@@ -1083,8 +1427,8 @@ ${this.hexDiff(s.current, s.planned, s.address)}</pre>`,
               <td class="c">${flag(co, "write", "W", "Write")}</td>
               <td class="c">${flag(co, "transmit", "T", "Transmit")}</td>
               <td class="c">${flag(co, "update", "U", "Update")}</td>
-              <td class="dpt">
-                ${co.dpt_codes.join(", ") || html`<span class="muted">-</span>`}
+              <td class="dpt" title=${co.dpt_codes.map((c) => dptTitle(c)).join("\n")}>
+                ${co.dpt_codes.map((c) => formatDpt(c)).join(", ") || html`<span class="muted">-</span>`}
               </td>
               <td class="muted">${co.priority || "Low"}</td>
             </tr>`,
@@ -1121,7 +1465,7 @@ ${this.hexDiff(s.current, s.planned, s.address)}</pre>`,
               @dblclick=${() => this.link(true)}
             >
               <span class="addr">${g.text}</span> ${g.name}
-              ${g.datapoint_type ? html`<span class="muted">${g.datapoint_type}</span>` : nothing}
+              ${g.datapoint_type ? html`<span class="muted" title=${dptTitle(g.datapoint_type)}>${formatDpt(g.datapoint_type)}</span>` : nothing}
             </div>`,
         )}
         ${this.newAddress() ? html`<div class=${this.linkPick === null ? "ga-row picked" : "ga-row"} @click=${() => (this.linkPick = null)}>${icon("plus", 13)} ${tr("Create")} <span class="addr">${this.newAddress()}</span> ${tr("and link it")}</div>` : nothing}
@@ -1194,6 +1538,40 @@ ${this.hexDiff(s.current, s.planned, s.address)}</pre>`,
           @sl-input=${(e: Event) => (this.assignSerial = (e.target as HTMLInputElement).value.trim())}
         ></sl-input>
         ${this.assignSerial ? nothing : this.renderProgrammingState()}
+        <div class="row">
+          <sl-button
+            size="small"
+            ?loading=${this.busy === "serials"}
+            ?disabled=${this.busy !== null}
+            title=${tr("Read the serial number of every device in programming mode")}
+            @click=${() =>
+              this.busAction("serials", async () => {
+                this.serials = (await api.get<{ items: Serial[] }>("api/bus/programming-mode/serials")).items;
+              })}
+            >${tr("Read serial numbers")}</sl-button
+          >
+          <sl-button
+            size="small"
+            ?disabled=${!this.assignSerial || this.busy !== null}
+            ?loading=${this.busy === "lookup"}
+            title=${tr("Ask the bus which address the device with this serial number carries")}
+            @click=${() =>
+              this.busAction("lookup", async () => {
+                this.serialLookup = await api.post(`api/bus/address-by-serial`, { serial: this.assignSerial });
+              })}
+            >${tr("Find address by serial")}</sl-button
+          >
+        </div>
+        ${this.serialLookup ? html`<p class="hint">${this.serialLookup.address ? html`${tr("That device carries")} <strong>${this.serialLookup.address}</strong>${this.serialLookup.project_device ? html` (${this.serialLookup.project_device})` : nothing}.` : tr("No device answered with that serial number.")}</p>` : nothing}
+        ${
+          this.serials
+            ? this.serials.length
+              ? html`<div class="ga-list">
+                  ${this.serials.map((s) => html`<div class="ga-row" title=${s.error ?? tr("Use this serial number")} @click=${() => s.serial_number && (this.assignSerial = s.serial_number)}><span class="addr">${s.address}</span> ${s.serial_number ?? html`<span class="muted">${s.error ?? tr("no serial number")}</span>`}</div>`)}
+                </div>`
+              : html`<p class="hint">${tr("No device is in programming mode.")}</p>`
+            : nothing
+        }
         <sl-button slot="footer" @click=${() => (this.assignDialog = false)}
           >${tr("Cancel")}</sl-button
         >

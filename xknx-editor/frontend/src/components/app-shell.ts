@@ -16,6 +16,7 @@ import {
   setLanguage,
   t as tr,
 } from "../i18n.js";
+import { DPT_STYLES, dptStyle, setDptStyle, type DptStyle } from "../dpt-format.js";
 
 const LEFT: { id: LeftTab; label: string }[] = [
   { id: "buildings", label: "Buildings" },
@@ -33,6 +34,18 @@ const CENTER: { id: CenterTab; label: string }[] = [
   { id: "docs", label: "Documents" },
   { id: "ai", label: "AI" },
   { id: "network", label: "Network" },
+  { id: "compare", label: "Compare" },
+  { id: "manufacturers", label: "Manufacturers" },
+  { id: "objects", label: "Group objects" },
+];
+/** The tables the File menu exports as CSV (reports.EXPORTS on the backend). */
+const CSV_EXPORTS: { id: string; label: string }[] = [
+  { id: "devices", label: "Devices" },
+  { id: "group-addresses", label: "Group addresses" },
+  { id: "group-objects", label: "Group objects" },
+  { id: "topology", label: "Topology" },
+  { id: "locations", label: "Buildings" },
+  { id: "manufacturers", label: "Manufacturers" },
 ];
 const RIGHT: { id: RightTab; label: string }[] = [
   { id: "history", label: "History" },
@@ -403,6 +416,21 @@ export class AppShell extends LitElement {
       });
       return;
     }
+    if (action.startsWith("csv:")) {
+      const a = document.createElement("a");
+      a.href = `api/export/${action.slice(4)}.csv`;
+      a.download = "";
+      document.body.append(a);
+      a.click();
+      a.remove();
+      return;
+    }
+    if (action.startsWith("dpt:")) {
+      setDptStyle(action.slice(4) as DptStyle);
+      store.notify();
+      this.requestUpdate();
+      return;
+    }
     if (action.startsWith("lang:")) {
       setLanguage(action.slice(5) as "en" | "nl" | "de");
       this.uiLang = language();
@@ -537,6 +565,12 @@ export class AppShell extends LitElement {
             <sl-menu-item value="export" ?disabled=${!p.open}
               >${tr("Export project (.knxproj)…")}</sl-menu-item
             >
+            <sl-menu-item ?disabled=${!p.open}
+              >${tr("Export table as CSV")}
+              <sl-menu slot="submenu">
+                ${CSV_EXPORTS.map((x) => html`<sl-menu-item value="csv:${x.id}">${tr(x.label)}</sl-menu-item>`)}
+              </sl-menu></sl-menu-item
+            >
             <sl-menu-item disabled
               ><span class="hint"
                 >${p.open && p.saved_at ? `${tr("Saved automatically")} · ${new Date(p.saved_at).toLocaleString()}` : tr("Edits are saved to the project file as you make them")}</span
@@ -590,6 +624,9 @@ export class AppShell extends LitElement {
               ?checked=${store.bottomOpen}
               >${tr("Show bottom panel")}</sl-menu-item
             >
+            <sl-divider></sl-divider>
+            <sl-menu-label>${tr("Datapoint types")}</sl-menu-label>
+            ${DPT_STYLES.map((x) => html`<sl-menu-item value="dpt:${x.id}" type="checkbox" ?checked=${dptStyle() === x.id}>${tr(x.label)}</sl-menu-item>`)}
             <sl-divider></sl-divider>
             <sl-menu-label>${tr("Language")}</sl-menu-label>
             ${LANGUAGES.map((l) => html`<sl-menu-item value="lang:${l.id}" type="checkbox" ?checked=${this.uiLang === l.id}>${l.label}</sl-menu-item>`)}`,
@@ -706,6 +743,12 @@ export class AppShell extends LitElement {
         return html`<xknx-ai-view></xknx-ai-view>`;
       case "network":
         return html`<xknx-network-view></xknx-network-view>`;
+      case "compare":
+        return html`<xknx-compare-view></xknx-compare-view>`;
+      case "manufacturers":
+        return html`<xknx-manufacturers-view></xknx-manufacturers-view>`;
+      case "objects":
+        return html`<xknx-objects-view></xknx-objects-view>`;
     }
   }
 

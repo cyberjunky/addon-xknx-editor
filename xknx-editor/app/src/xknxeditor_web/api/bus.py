@@ -97,6 +97,41 @@ async def programming_mode(request: Request) -> Any:
     return {"items": items, "count": len(items)}
 
 
+async def programming_mode_serials(request: Request) -> Any:
+    """The devices in programming mode, each with the serial number it reports."""
+    from xknxeditor_web.programming import programming_mode_serials as read
+
+    x = getattr(_bus(request), "_xknx", None)
+    if x is None:
+        raise ApiError("Not connected to the bus", 409)
+    try:
+        items = await read(x)
+    except Exception as exc:  # noqa: BLE001
+        raise ApiError(f"Read failed: {type(exc).__name__}: {exc}", 502) from exc
+    return {"items": items, "count": len(items)}
+
+
+async def address_by_serial(request: Request) -> Any:
+    """Which individual address the device with this serial number carries (no programming mode)."""
+    from xknxeditor_web import programming as prog
+
+    x = getattr(_bus(request), "_xknx", None)
+    if x is None:
+        raise ApiError("Not connected to the bus", 409)
+    data = await body(request)
+    try:
+        serial = prog.parse_serial(need(data, "serial"))
+    except prog.ProgrammingError as exc:
+        raise ApiError(str(exc)) from exc
+    try:
+        address = await prog.address_by_serial(x, serial)
+    except Exception as exc:  # noqa: BLE001
+        raise ApiError(f"Read failed: {type(exc).__name__}: {exc}", 502) from exc
+    editor = request.app.state.editor
+    device = await editor.worker.run(editor.device_on_address, address) if address else ""
+    return {"serial": serial.hex().upper(), "address": address, "project_device": device or None}
+
+
 async def disconnect(request: Request) -> Any:
     return await _bus(request).disconnect()
 
@@ -171,6 +206,18 @@ async def _archive_filters(request: Request) -> dict[str, Any]:
         names = await _ga_names(request)
         matches = [parse_ga(text) for text, (name, _dpt) in names.items() if needle in (name or "").lower()]
         filters["ga_in"] = [m for m in matches if m is not None][:500]
+    device = (p.get("device") or "").strip()
+    if device:
+        editor = request.app.state.editor
+        try:
+            found = await editor.worker.run(editor.device_traffic, int(device))
+        except ValueError as exc:
+            raise ApiError("device must be a device id") from exc
+        if found["address"]:
+            filters["involving"] = found["address"]
+            filters["involving_gas"] = found["gas"][:2000]
+        else:
+            filters["ga_any"] = found["gas"][:2000]
     dpt = (p.get("dpt") or "").strip()
     if dpt:
         names = await _ga_names(request)
@@ -391,6 +438,8 @@ def routes() -> list[Route]:
         route("/api/bus/scan", scan, ["POST", "GET"]),
         route("/api/bus/connect", connect, ["POST"]),
         route("/api/bus/disconnect", disconnect, ["POST"]),
+        route("/api/bus/programming-mode/serials", programming_mode_serials),
+        route("/api/bus/address-by-serial", address_by_serial, ["POST"]),
         route("/api/bus/programming-mode", programming_mode),
         route("/api/bus/telegrams", telegrams),
         route("/api/bus/telegrams/clear", clear, ["POST"]),

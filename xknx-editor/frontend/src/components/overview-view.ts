@@ -1,9 +1,24 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { api, type DeviceSummary } from "../api.js";
+import { api, ApiError, type DeviceSummary, type Job } from "../api.js";
 import { icon } from "../icons.js";
 import { store } from "../store.js";
 import { t as tr } from "../i18n.js";
+
+type Online = {
+  device_id: number;
+  reachable: boolean | null;
+  rtt_ms?: number | null;
+  refused?: boolean;
+  error: string | null;
+};
+type Verified = {
+  device_id: number;
+  matches: boolean | null;
+  changed_bytes?: number;
+  changed_properties?: number;
+  error: string | null;
+};
 
 /** Site-wide device table (the desktop app's "Device overview" / cockpit). */
 @customElement("xknx-overview-view")
@@ -71,6 +86,11 @@ export class OverviewView extends LitElement {
   @state() private filter = "";
   @state() private sort: keyof DeviceSummary = "individual_address";
   @state() private onlyAttention = false;
+  @state() private selected = new Set<number>();
+  @state() private online = new Map<number, Online>();
+  @state() private verified = new Map<number, Verified>();
+  @state() private busy: string | null = null;
+  @state() private progress = "";
   private unsubscribe = () => {};
   private rev = -1;
 
@@ -145,6 +165,90 @@ export class OverviewView extends LitElement {
     return out;
   }
 
+  private toggle(id: number, on: boolean): void {
+    const next = new Set(this.selected);
+    if (on) next.add(id);
+    else next.delete(id);
+    this.selected = next;
+  }
+
+  /** Ping or verify the selected devices (all shown ones when none are selected), as a job. */
+  private async runBulk(
+    kind: "ping" | "verify",
+    shown: DeviceSummary[],
+  ): Promise<void> {
+    const ids = (
+      this.selected.size ? [...this.selected] : shown.map((d) => d.id)
+    ).filter((id) => {
+      const d = this.devices.find((x) => x.id === id);
+      return !!d && !!d.individual_address && (kind === "ping" || d.resolved);
+    });
+    if (!ids.length) {
+      store.say(
+        tr("No device with an address (and, to verify, product data) to check."),
+        "primary",
+      );
+      return;
+    }
+    this.busy = kind;
+    try {
+      let job = await api.post<Job>(`api/devices/${kind}`, { device_ids: ids });
+      while (job.status === "queued" || job.status === "running") {
+        await new Promise((r) => setTimeout(r, 700));
+        job = await api.get<Job>(`api/jobs/${job.id}`);
+        this.progress = job.stage;
+      }
+      if (job.status === "failed")
+        throw new ApiError(500, job.error ?? "failed");
+      if (kind === "ping") {
+        const r = job.result as { items: Online[]; reachable: number; count: number };
+        const next = new Map(this.online);
+        for (const item of r.items) next.set(item.device_id, item);
+        this.online = next;
+        store.say(
+          `${r.reachable} ${tr("of")} ${r.count} ${tr("devices answered")}`,
+          r.reachable === r.count ? "success" : "primary",
+        );
+      } else {
+        const r = job.result as { items: Verified[]; matches: number; count: number };
+        const next = new Map(this.verified);
+        for (const item of r.items) next.set(item.device_id, item);
+        this.verified = next;
+        store.say(
+          `${r.matches} ${tr("of")} ${r.count} ${tr("devices match the project")}`,
+          r.matches === r.count ? "success" : "primary",
+        );
+      }
+    } catch (e) {
+      store.say(e instanceof ApiError ? e.message : String(e), "danger");
+    } finally {
+      this.busy = null;
+      this.progress = "";
+    }
+  }
+
+  private renderOnline(d: DeviceSummary) {
+    const o = this.online.get(d.id);
+    if (!o) return html`<span class="muted">·</span>`;
+    if (o.error) return html`<span class="warn" title=${o.error}>?</span>`;
+    const title = o.refused
+      ? tr("answers, but refused the connection")
+      : `${o.rtt_ms} ms`;
+    return o.reachable
+      ? html`<span style="color:var(--ha-success)" title=${title}>●</span>`
+      : html`<span style="color:var(--ha-error)" title=${tr("no answer")}>●</span>`;
+  }
+
+  private renderVerified(d: DeviceSummary) {
+    const v = this.verified.get(d.id);
+    if (!v) return html`<span class="muted">·</span>`;
+    if (v.error) return html`<span class="warn" title=${v.error}>?</span>`;
+    const title = `${v.changed_bytes ?? 0} ${tr("byte(s) and")} ${v.changed_properties ?? 0} ${tr("propert(y/ies) differ")}`;
+    return v.matches
+      ? html`<span style="color:var(--ha-success)" title=${tr("matches the project")}>✔</span>`
+      : html`<span class="warn" title=${title}>≠</span>`;
+  }
+
   render() {
     if (!store.project.open)
       return html`<div class="empty">${tr("Open a project first.")}</div>`;
@@ -191,9 +295,49 @@ export class OverviewView extends LitElement {
           >${tr("Needs attention only")}</sl-checkbox
         >
         <span class="muted">${rows.length} of ${this.devices.length}</span>
+        <span style="flex:1"></span>
+        ${this.selected.size ? html`<span class="muted">${this.selected.size} ${tr("selected")}</span>` : nothing}
+        <sl-button
+          size="small"
+          ?disabled=${store.bus.state !== "CONNECTED" || this.busy !== null}
+          ?loading=${this.busy === "ping"}
+          title=${tr("Check which devices answer on the bus (the selected ones, or all shown)")}
+          @click=${() => this.runBulk("ping", rows)}
+          >${tr("Ping")}</sl-button
+        >
+        <sl-button
+          size="small"
+          ?disabled=${store.bus.state !== "CONNECTED" || this.busy !== null}
+          ?loading=${this.busy === "verify"}
+          title=${tr("Read the devices and compare them with the project (the selected ones, or all shown); nothing is written")}
+          @click=${() => this.runBulk("verify", rows)}
+          >${tr("Verify")}</sl-button
+        >
+        <sl-button
+          size="small"
+          ?disabled=${this.selected.size < 2}
+          title=${tr("Compare the selected devices side by side")}
+          @click=${() => store.openCompare([...this.selected])}
+          >${tr("Compare")}</sl-button
+        >
+        ${this.progress ? html`<span class="muted">${this.progress}</span>` : nothing}
       </div>
       <table>
         <tr>
+          <th style="cursor:default">
+            <sl-checkbox
+              size="small"
+              ?checked=${rows.length > 0 && rows.every((d) => this.selected.has(d.id))}
+              @sl-change=${(e: Event) => {
+                const on = (e.target as HTMLInputElement).checked;
+                this.selected = on ? new Set(rows.map((d) => d.id)) : new Set();
+              }}
+            ></sl-checkbox>
+          </th>
+          <th title=${tr("Answers on the bus (Ping)")}>${tr("Online")}</th>
+          <th title=${tr("Holds what the project would write (Verify)")}>
+            ${tr("Verified")}
+          </th>
           ${th("individual_address", "Address")}${th("room", "Room")}${th("name", "Name")}${th("application_name", "Application program")}
           <th title=${tr("Individual address loaded")}>Adr</th>
           <th title=${tr("Application program loaded")}>Prg</th>
@@ -211,6 +355,15 @@ export class OverviewView extends LitElement {
               @dragstart=${(e: DragEvent) => e.dataTransfer?.setData("text/plain", String(d.id))}
               @click=${() => store.select(d.id)}
             >
+              <td @click=${(e: Event) => e.stopPropagation()}>
+                <sl-checkbox
+                  size="small"
+                  ?checked=${this.selected.has(d.id)}
+                  @sl-change=${(e: Event) => this.toggle(d.id, (e.target as HTMLInputElement).checked)}
+                ></sl-checkbox>
+              </td>
+              <td style="text-align:center">${this.renderOnline(d)}</td>
+              <td style="text-align:center">${this.renderVerified(d)}</td>
               <td class="addr">${d.individual_address ?? "-.-.-"}</td>
               <td>
                 <sl-select
@@ -232,7 +385,9 @@ export class OverviewView extends LitElement {
                   ${this.spaces.map((s) => html`<sl-option value=${s.id}>${s.name}</sl-option>`)}
                 </sl-select>
               </td>
-              <td>${d.name}</td>
+              <td>
+                ${d.name || html`<span class="muted">${d.product_name}</span>`}
+              </td>
               <td>
                 ${d.application_name || html`<span class="muted">-</span>`}
               </td>

@@ -5,7 +5,7 @@ import { api, ApiError } from "../api.js";
 import { icon } from "../icons.js";
 import { store } from "../store.js";
 import { t as tr } from "../i18n.js";
-import { dptShort } from "./monitor-view.js";
+import { dptTitle, formatDpt, onDptNames } from "../dpt-format.js";
 
 type NetNode = NodeObject & {
   kind: "device" | "ga";
@@ -165,13 +165,17 @@ export class NetworkView extends LitElement {
   private hover: NetNode | null = null;
   private neighbours = new Set<string>();
 
+  private unsubscribeDpt = () => {};
+
   connectedCallback(): void {
     super.connectedCallback();
     this.unsubscribe = store.subscribe(() => this.onStore());
+    this.unsubscribeDpt = onDptNames(() => this.requestUpdate());
   }
 
   disconnectedCallback(): void {
     this.unsubscribe();
+    this.unsubscribeDpt();
     this.resize?.disconnect();
     this.graph?._destructor();
     this.graph = null;
@@ -464,7 +468,7 @@ export class NetworkView extends LitElement {
                 </h4>
                 <div class="addr">${sel.address ?? ""}</div>
                 <div>${sel.name}</div>
-                ${sel.kind === "device" ? html`<div class="muted">${sel.product ?? ""}${sel.room ? ` · ${sel.room}` : ""}</div>` : html`<div class="muted">${sel.dpt ? dptShort(sel.dpt) : tr("no DPT")}</div>`}
+                ${sel.kind === "device" ? html`<div class="muted">${sel.product ?? ""}${sel.room ? ` · ${sel.room}` : ""}</div>` : html`<div class="muted" title=${dptTitle(sel.dpt)}>${sel.dpt ? formatDpt(sel.dpt) : tr("no DPT")}</div>`}
                 <div class="muted">
                   ${(this.linksOf.get(sel.id) ?? []).length} ${tr("links")}
                 </div>
