@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.11 (2026-09-17)
+
+- About shows the add-on's real version instead of 0.1.0: the Supervisor's build version is handed
+  to the backend.
+- The page is served with `Cache-Control: no-cache`, so a browser picks up the new UI after an
+  update instead of running the previous one until a hard reload.
+
 ## 0.3.10 (2026-09-17)
 
 - Charts: every open group address is a tab of its own (plus All, to overlay them); the chart on

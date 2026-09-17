@@ -208,7 +208,9 @@ def create_app(settings: Settings | None = None) -> Starlette:
     spa_index = static_dir / "index.html"
 
     async def spa(_: Request) -> Response:
-        return FileResponse(spa_index)
+        # The page names the hashed bundles of this build; a cached copy would keep an updated
+        # add-on running the previous UI until a hard reload.
+        return FileResponse(spa_index, headers={"Cache-Control": "no-cache"})
 
     async def no_ui(_: Request) -> Response:
         """Only reachable when the image was built without the frontend."""

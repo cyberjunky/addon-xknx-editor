@@ -116,7 +116,8 @@ COPY rootfs /
 RUN chmod a+x /etc/services.d/xknx-editor/run /etc/services.d/xknx-editor/finish
 
 ENV PATH="/venv/bin:${PATH}" \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    XKNX_ADDON_VERSION="${BUILD_VERSION}"
 
 LABEL \
     io.hass.name="XKNX Editor (${BUILD_ARCH})" \

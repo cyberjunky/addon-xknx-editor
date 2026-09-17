@@ -7,4 +7,8 @@ GNU General Public License as published by the Free Software Foundation; version
 only. This program is distributed WITHOUT ANY WARRANTY; see the LICENSE file for details.
 """
 
-__version__ = "0.1.0"
+import os
+
+# The Supervisor builds the image with the add-on's version from config.yaml (BUILD_VERSION); the
+# Dockerfile hands it on. Outside the image (tests, development) there is none.
+__version__ = os.environ.get("XKNX_ADDON_VERSION") or "dev"

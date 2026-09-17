@@ -140,7 +140,9 @@ def test_spa_served_when_built(tmp_path: Path, dirs: tuple[Path, Path], monkeypa
     config, share = dirs
     settings = Settings(config_dir=config, share_dir=share, ingress_only=False, ingress_entry="", upstream_ref="t", language=None)
     with _TC(create_app(settings)) as c:
-        assert "XKNX Editor" in c.get("/").text
+        page = c.get("/")
+        assert "XKNX Editor" in page.text
+        assert page.headers["cache-control"] == "no-cache"  # an update must not keep the old UI
         assert c.get("/assets/app.js").text.startswith("console.log")
         assert c.get("/status").status_code == 404  # the pre-SPA status page is gone
         assert c.get("/api/project").json()["open"] is False
