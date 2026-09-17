@@ -34,6 +34,34 @@ def test_parse_serial_and_hex() -> None:
             prog.parse_hex(bad)
 
 
+def test_ip_parameters() -> None:
+    r = prog.ip_parameters(bytes([192, 168, 1, 20]), bytes.fromhex("000AB3123456"), b"Gira S1" + bytes(7))
+    assert r == {
+        "ip_address": "192.168.1.20",
+        "mac_address": "00:0A:B3:12:34:56",
+        "friendly_name": "Gira S1",
+        "web_url": "http://192.168.1.20/",
+    }
+    assert prog.ip_parameters(bytes(4), b"", b"")["ip_address"] is None
+
+
+def test_device_pictures(tmp_path: Path) -> None:
+    from xknxeditor_web.docs import DocStore, tag_key
+
+    store = DocStore(tmp_path)
+    store.add("manual.pdf", b"%PDF", tag="5WG1 257-3AB32")
+    older = store.add("front.png", b"png", tag="5WG1 257-3AB32")
+    newer = store.add("side.jpg", b"jpg", tag="5wg12573ab32")
+    key = tag_key("5WG1257-3AB32")
+    assert store.pictures()[key] == newer["id"]  # the newest image, the PDF never
+    store.update(older["id"], picture=True)
+    assert store.pictures()[key] == older["id"]  # the marked one wins
+    store.update(newer["id"], picture=True)
+    assert store.pictures()[key] == newer["id"] and not store.get(older["id"])[1]["picture"]
+    with pytest.raises(Exception):
+        store.update(store.list(tag="5WG1")[-1]["id"], picture=True)  # the PDF
+
+
 def test_verdict_reads_a_preflight_as_a_check() -> None:
     same = {"segments": [{"changed_bytes": 0}], "properties": [], "changed_bytes": 0, "changed_properties": 0}
     assert prog.verdict(same)["matches"] is True and prog.verdict(same)["compared"] == 1

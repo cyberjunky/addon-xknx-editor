@@ -402,6 +402,7 @@ async def read_overview(xknx: XKNX, address: str) -> dict[str, Any]:
         dossier = await read_dossier(programmer)
         error_raw = await prop(programmer, _PID_ERROR_CODE)
         progmode_raw = await prop(programmer, _PID_PROGMODE)
+        network = await read_ip_parameters(programmer)
     finally:
         with contextlib.suppress(Exception):
             await xknx.management.disconnect(target)
@@ -419,7 +420,50 @@ async def read_overview(xknx: XKNX, address: str) -> dict[str, Any]:
         "error_code": code,
         "error_text": _ERROR_CLASS.get(code, f"error code {code}") if code is not None else None,
         "programming_mode": bool(progmode_raw[0] & 0x01) if progmode_raw else None,
+        **network,
     }
+
+
+_OBJECT_KNXNETIP = 11
+_PID_CURRENT_IP_ADDRESS = 57
+_PID_MAC_ADDRESS = 64
+_PID_FRIENDLY_NAME = 76
+
+
+def ip_parameters(ip: bytes, mac: bytes, name: bytes) -> dict[str, Any]:
+    """The KNXnet/IP Parameter Object's current address, MAC and friendly name, for display."""
+    address = ".".join(str(b) for b in ip[:4]) if len(ip) >= 4 and any(ip[:4]) else None
+    return {
+        "ip_address": address,
+        "mac_address": ":".join(f"{b:02X}" for b in mac[:6]) if len(mac) >= 6 else None,
+        "friendly_name": name.split(b"\0", 1)[0].decode("latin-1").strip() or None if name else None,
+        "web_url": f"http://{address}/" if address else None,
+    }
+
+
+async def read_ip_parameters(programmer: Any) -> dict[str, Any]:
+    """A device with a KNXnet/IP Parameter Object (IP routers, interfaces, IP devices) reports its
+    IP address there; most have a web interface on it. Absent on TP devices: all None."""
+    from xknx.exceptions import XKNXException
+    from xknxeditor.download.errors import DownloadError
+
+    empty = ip_parameters(b"", b"", b"")
+    try:
+        index = await programmer.locate_object(_OBJECT_KNXNETIP)
+    except (DownloadError, XKNXException):
+        return empty
+
+    async def read(pid: int, count: int = 1) -> bytes:
+        try:
+            return await programmer.read_property(index, pid, count=count)
+        except (DownloadError, XKNXException):
+            return b""
+
+    return ip_parameters(
+        await read(_PID_CURRENT_IP_ADDRESS),
+        await read(_PID_MAC_ADDRESS),
+        await read(_PID_FRIENDLY_NAME, 14),
+    )
 
 
 async def restart(xknx: XKNX, address: str) -> None:

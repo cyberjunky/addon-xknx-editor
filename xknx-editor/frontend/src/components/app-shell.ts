@@ -48,8 +48,8 @@ const CSV_EXPORTS: { id: string; label: string }[] = [
   { id: "manufacturers", label: "Manufacturers" },
 ];
 const RIGHT: { id: RightTab; label: string }[] = [
-  { id: "history", label: "History" },
   { id: "project", label: "Project" },
+  { id: "history", label: "History" },
   { id: "health", label: "Health" },
 ];
 /** What a backup can hold, matching backup.CATEGORIES on the backend. */
@@ -247,6 +247,7 @@ export class AppShell extends LitElement {
     | "export"
     | "about"
     | "signing"
+    | "dpts"
     | "logkey"
     | "licences"
     | null = null;
@@ -470,6 +471,9 @@ export class AppShell extends LitElement {
           () => undefined,
         );
         break;
+      case "dpts":
+        this.dialog = "dpts";
+        break;
       case "licences":
         this.dialog = "licences";
         void api.get<NonNullable<typeof this.licences>>("api/licences").then(
@@ -631,7 +635,7 @@ export class AppShell extends LitElement {
             <sl-menu-label>${tr("Language")}</sl-menu-label>
             ${LANGUAGES.map((l) => html`<sl-menu-item value="lang:${l.id}" type="checkbox" ?checked=${this.uiLang === l.id}>${l.label}</sl-menu-item>`)}`,
         )}
-        ${menu(tr("Help"), html`<sl-menu-item value="signing">${tr("Signing key…")}</sl-menu-item><sl-menu-item value="logkey">${tr("Project log key…")}</sl-menu-item><sl-menu-item value="licences">${tr("Third-party licences…")}</sl-menu-item><sl-divider></sl-divider><sl-menu-item value="about">${tr("About XKNX Editor")}</sl-menu-item>`)}
+        ${menu(tr("Help"), html`<sl-menu-item value="signing">${tr("Signing key…")}</sl-menu-item><sl-menu-item value="logkey">${tr("Project log key…")}</sl-menu-item><sl-menu-item value="dpts">${tr("Datapoint types…")}</sl-menu-item><sl-menu-item value="licences">${tr("Third-party licences…")}</sl-menu-item><sl-divider></sl-divider><sl-menu-item value="about">${tr("About XKNX Editor")}</sl-menu-item>`)}
         <span class="project" title=${p.path ?? ""}
           >${p.open ? html`${p.name} · ${p.device_count} ${tr("devices")}` : tr("No project open")}</span
         >
@@ -795,6 +799,16 @@ export class AppShell extends LitElement {
         }
       };
     return html`
+      <sl-dialog
+        label=${tr("Datapoint types")}
+        style="--width: 900px"
+        ?open=${this.dialog === "dpts"}
+        @sl-after-hide=${(e: Event) => {
+          if (e.target === e.currentTarget) this.dialog = null;
+        }}
+      >
+        ${this.dialog === "dpts" ? html`<xknx-dpt-table></xknx-dpt-table>` : nothing}
+      </sl-dialog>
       <xknx-file-dialog
         label=${tr("Open project")}
         ext=".xknx"

@@ -10,7 +10,7 @@ import {
 } from "../api.js";
 import { dptTitle, formatDpt, onDptNames } from "../dpt-format.js";
 import { icon } from "../icons.js";
-import { store } from "../store.js";
+import { pictureKey, store } from "../store.js";
 import "./device-connections.js";
 import "./docs-view.js";
 import "./telegram-list.js";
@@ -55,6 +55,10 @@ type Overview = {
   hardware_type: string | null;
   error_text: string | null;
   programming_mode: boolean | null;
+  ip_address?: string | null;
+  mac_address?: string | null;
+  friendly_name?: string | null;
+  web_url?: string | null;
 };
 
 type Preflight = {
@@ -175,6 +179,61 @@ export class DevicePanel extends LitElement {
     sl-details::part(base) {
       background: var(--ha-card);
       border-radius: 8px;
+    }
+    .picture {
+      float: right;
+      margin: 0 0 8px 16px;
+    }
+    .picture img {
+      display: block;
+      max-width: 180px;
+      max-height: 140px;
+      object-fit: contain;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .add-picture {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 18px 16px;
+      border: 1px dashed var(--ha-divider);
+      border-radius: 8px;
+      color: var(--ha-text-2);
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .add-picture:hover {
+      color: var(--ha-primary);
+      border-color: var(--ha-primary);
+    }
+    sl-details::part(header) {
+      padding: 8px 12px;
+      font-weight: 600;
+    }
+    sl-details::part(content) {
+      padding: 0 12px 10px;
+    }
+    .diag h4 {
+      margin: 14px 0 4px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .diag .row {
+      margin: 4px 0;
+      align-items: flex-end;
+    }
+    .diag .field {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 11px;
+      color: var(--ha-text-2);
+    }
+    .diag .note {
+      font-size: 12px;
+      color: var(--ha-text-2);
+      margin: 0 0 4px;
     }
     table.info {
       border-collapse: collapse;
@@ -369,6 +428,9 @@ export class DevicePanel extends LitElement {
     project_device: string | null;
   } | null = null;
   @state() private confirmUnassign = false;
+  /** Document id of the device's picture (an image tagged with its order number). */
+  @state() private picture: string | null = null;
+  private pictureFor = "";
   // Diagnostics: raw memory and property access.
   @state() private diagOutput: { label: string; hex: string }[] = [];
   private unsubscribeDpt = () => {};
@@ -424,6 +486,21 @@ export class DevicePanel extends LitElement {
       void this.sync(true);
     }
     this.keepTab();
+  }
+
+  private async uploadPicture(e: Event, orderNumber: string): Promise<void> {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+    try {
+      const q = new URLSearchParams({ name: file.name, tag: orderNumber, picture: "1" });
+      const res = await fetch(`api/docs?${q}`, { method: "PUT", body: file });
+      if (!res.ok) throw new ApiError(res.status, (await res.json().catch(() => ({}))).error ?? res.statusText);
+      store.docsChanged();
+    } catch (err) {
+      store.say(err instanceof ApiError ? err.message : String(err), "danger");
+    }
   }
 
   /** Shoelace's tab group loses its active tab when tabs come and go under it (a device whose
@@ -697,6 +774,12 @@ export class DevicePanel extends LitElement {
     const busTitle = connected ? "" : "Connect to a gateway first (top right)";
     const params = d.parameter_count ?? this.countParams(this.tree);
     const shown = d.name || d.product_name || d.hardware_name;
+    const key = `${pictureKey(d.order_number)}#${store.docsRevision}`;
+    if (key !== this.pictureFor) {
+      this.pictureFor = key;
+      const want = pictureKey(d.order_number);
+      void store.pictures().then((m) => (this.picture = want ? (m[want] ?? null) : null));
+    }
     const linkedGas = [
       ...new Set(
         this.comObjects.flatMap((co) =>
@@ -731,6 +814,18 @@ export class DevicePanel extends LitElement {
         >
         ${d.resolved && d.dali ? html`<sl-tab slot="nav" panel="dali" ?active=${this.tab === "dali"}>${tr("DALI bus")}</sl-tab>` : nothing}
         <sl-tab-panel name="overview">
+          <div class="picture">
+            ${
+              this.picture
+                ? html`<a href="api/docs/${this.picture}/raw" target="_blank" rel="noopener" title=${tr("Open the picture")}><img src="api/docs/${this.picture}/raw" alt=${shown} /></a>`
+                : d.order_number
+                  ? html`<label class="add-picture" title=${tr("Upload a product picture; it is kept in Documents, tagged with the order number, and shown for every device with this order number")}>
+                      ${icon("upload", 16)} ${tr("Add picture")}
+                      <input type="file" accept="image/*" hidden @change=${(e: Event) => this.uploadPicture(e, d.order_number)} />
+                    </label>`
+                  : nothing
+            }
+          </div>
           <div class="grid">
             <label>${tr("Name")}</label>
             <sl-input
@@ -818,7 +913,7 @@ export class DevicePanel extends LitElement {
 
           <div class="row">
             <sl-tooltip
-              content=${busTitle || tr("Read mask, application, serial number and error state from the device")}
+              content=${busTitle || tr("Read mask, application, serial number, error state and, for IP devices, the IP address from the device")}
             >
               <sl-button
                 size="small"
@@ -1187,16 +1282,16 @@ export class DevicePanel extends LitElement {
 
   private renderDiagnostics(d: Device, connected: boolean, busTitle: string) {
     const disabled = !connected || !d.individual_address || this.busy !== null;
-    return html`
-      <p class="muted">
+    return html`<div class="diag">
+      <p class="note">
         ${tr("Direct access to the device's memory and interface-object properties, for troubleshooting. Reads are harmless; writes change the device immediately and are not part of the project.")}
         ${busTitle ? html`<br />${busTitle}` : nothing}
       </p>
-      <sl-details summary=${tr("Memory")} open>
+      <h4>${tr("Memory")}</h4>
         <div class="row">
-          <sl-input id="mem-start" size="small" label=${tr("Start (hex with 0x)")} value="0x0000" style="width:140px"></sl-input>
-          <sl-input id="mem-count" size="small" type="number" min="1" max="4096" label=${tr("Bytes")} value="16" style="width:100px"></sl-input>
-          <sl-button size="small" style="align-self:flex-end" ?disabled=${disabled} ?loading=${this.busy === "diag"}
+          <label class="field">${tr("Start (hex with 0x)")}<sl-input id="mem-start" size="small" value="0x0000" style="width:140px"></sl-input></label>
+          <label class="field">${tr("Bytes")}<sl-input id="mem-count" size="small" type="number" min="1" max="4096" value="16" style="width:100px"></sl-input></label>
+          <sl-button size="small" ?disabled=${disabled} ?loading=${this.busy === "diag"}
             @click=${() => {
               const start = this.num("mem-start");
               const count = this.num("mem-count");
@@ -1204,8 +1299,8 @@ export class DevicePanel extends LitElement {
             }}>${tr("Read")}</sl-button>
         </div>
         <div class="row">
-          <sl-input id="mem-data" size="small" label=${tr("Data to write (hex bytes)")} placeholder="01 02 FF" style="min-width:260px"></sl-input>
-          <sl-button size="small" variant="danger" outline style="align-self:flex-end" ?disabled=${disabled}
+          <label class="field">${tr("Data to write (hex bytes)")}<sl-input id="mem-data" size="small" placeholder="01 02 FF" style="min-width:260px"></sl-input></label>
+          <sl-button size="small" variant="danger" outline ?disabled=${disabled}
             @click=${() => {
               const start = this.num("mem-start");
               const data = this.text("mem-data");
@@ -1213,32 +1308,32 @@ export class DevicePanel extends LitElement {
               void this.diag(`${tr("Memory write")} 0x${start.toString(16).toUpperCase()}`, "memory/write", { start, data });
             }}>${tr("Write")}</sl-button>
         </div>
-      </sl-details>
-      <sl-details summary=${tr("Property")} open>
+
+      <h4>${tr("Property")}</h4>
         <div class="row">
-          <sl-input id="prop-obj" size="small" type="number" min="0" max="255" label=${tr("Object index")} value="0" style="width:110px"></sl-input>
-          <sl-input id="prop-pid" size="small" type="number" min="0" max="255" label=${tr("Property id")} value="11" style="width:110px"></sl-input>
-          <sl-input id="prop-count" size="small" type="number" min="0" max="15" label=${tr("Count")} value="1" style="width:90px"></sl-input>
-          <sl-input id="prop-start" size="small" type="number" min="0" max="4095" label=${tr("Start index")} value="1" style="width:100px"></sl-input>
-          <sl-button size="small" style="align-self:flex-end" ?disabled=${disabled} ?loading=${this.busy === "diag"}
+          <label class="field">${tr("Object index")}<sl-input id="prop-obj" size="small" type="number" min="0" max="255" value="0" style="width:110px"></sl-input></label>
+          <label class="field">${tr("Property id")}<sl-input id="prop-pid" size="small" type="number" min="0" max="255" value="11" style="width:110px"></sl-input></label>
+          <label class="field">${tr("Count")}<sl-input id="prop-count" size="small" type="number" min="0" max="15" value="1" style="width:90px"></sl-input></label>
+          <label class="field">${tr("Start index")}<sl-input id="prop-start" size="small" type="number" min="0" max="4095" value="1" style="width:100px"></sl-input></label>
+          <sl-button size="small" ?disabled=${disabled} ?loading=${this.busy === "diag"}
             @click=${() => {
               const body = { object_index: this.num("prop-obj"), property_id: this.num("prop-pid"), count: this.num("prop-count"), start_index: this.num("prop-start") };
               void this.diag(`${tr("Property")} ${body.object_index}/${body.property_id}`, "property/read", body);
             }}>${tr("Read")}</sl-button>
         </div>
         <div class="row">
-          <sl-input id="prop-data" size="small" label=${tr("Data to write (hex bytes)")} placeholder="01" style="min-width:260px"></sl-input>
-          <sl-button size="small" variant="danger" outline style="align-self:flex-end" ?disabled=${disabled}
+          <label class="field">${tr("Data to write (hex bytes)")}<sl-input id="prop-data" size="small" placeholder="01" style="min-width:260px"></sl-input></label>
+          <sl-button size="small" variant="danger" outline ?disabled=${disabled}
             @click=${() => {
               const body = { object_index: this.num("prop-obj"), property_id: this.num("prop-pid"), count: Math.max(1, this.num("prop-count")), start_index: Math.max(1, this.num("prop-start")), data: this.text("prop-data") };
               if (!body.data || !confirm(`${tr("Write")} ${body.data} ${tr("to property")} ${body.object_index}/${body.property_id} ${tr("of")} ${d.individual_address}? ${tr("This changes the device immediately.")}`)) return;
               void this.diag(`${tr("Property write")} ${body.object_index}/${body.property_id}`, "property/write", body);
             }}>${tr("Write")}</sl-button>
         </div>
-        <p class="muted">${tr("Common Device Object (index 0) properties: 11 serial number, 12 manufacturer, 13 program version, 15 order info, 54 programming mode, 56 max APDU length, 78 hardware type.")}</p>
-      </sl-details>
+        <p class="note">${tr("Common Device Object (index 0) properties: 11 serial number, 12 manufacturer, 13 program version, 15 order info, 54 programming mode, 56 max APDU length, 78 hardware type.")}</p>
+
       ${this.diagOutput.length ? html`<pre class="hex">${this.diagOutput.map((o) => `${o.label}\n  ${o.hex.match(/.{1,2}/g)?.join(" ") ?? o.hex}\n`).join("")}</pre>` : nothing}
-    `;
+    </div>`;
   }
 
   private renderUnassignDialog() {
@@ -1302,6 +1397,19 @@ export class DevicePanel extends LitElement {
             ${o.programming_mode === null ? "-" : o.programming_mode ? "on" : "off"}
           </td>
         </tr>
+        ${
+          o.ip_address
+            ? html`<tr>
+                  <th>${tr("IP address")}</th>
+                  <td>
+                    ${o.ip_address}
+                    ${o.web_url ? html` · <a href=${o.web_url} target="_blank" rel="noopener">${tr("Open web interface")}</a>` : nothing}
+                  </td>
+                </tr>
+                ${o.mac_address ? html`<tr><th>${tr("MAC address")}</th><td>${o.mac_address}</td></tr>` : nothing}
+                ${o.friendly_name ? html`<tr><th>${tr("Device name")}</th><td>${o.friendly_name}</td></tr>` : nothing}`
+            : nothing
+        }
       </table>
     </sl-details>`;
   }

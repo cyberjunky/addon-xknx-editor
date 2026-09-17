@@ -4,6 +4,7 @@ import { api, ApiError } from "../api.js";
 import { icon } from "../icons.js";
 import { store, type TelegramRecord } from "../store.js";
 import { t as tr } from "../i18n.js";
+import "./dpt-picker.js";
 import { dptTitle, formatDpt, onDptNames } from "../dpt-format.js";
 import "./telegram-timeline.js";
 
@@ -701,18 +702,18 @@ export class MonitorView extends LitElement {
             this.scheduleArchive();
           }}
         ></sl-input>
-        <sl-input
-          class="narrow"
-          size="small"
-          placeholder="DPT 9.001"
+        <xknx-dpt-picker
+          compact
+          allow-main
+          style="width:210px;min-width:0"
+          placeholder=${tr("DPT: 9, 9.001, temperature…")}
           title=${tr("Datapoint type: 9 for every 9.xxx, 9.001 for one sub-type")}
-          clearable
           .value=${this.dpt}
-          @sl-input=${(e: Event) => {
-            this.dpt = (e.target as HTMLInputElement).value;
+          @dpt-change=${(e: CustomEvent<{ value: string }>) => {
+            this.dpt = e.detail.value;
             this.scheduleArchive();
           }}
-        ></sl-input>
+        ></xknx-dpt-picker>
         <sl-button
           size="small"
           variant=${this.timeline ? "primary" : "default"}

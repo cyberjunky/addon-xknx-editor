@@ -32,7 +32,13 @@ async def upload(request: Request) -> Any:
     name = request.query_params.get("name", "document")
     tag = request.query_params.get("tag", "")
     note = request.query_params.get("note", "")
-    return _store(request).add(name, content, tag, note)
+    picture = request.query_params.get("picture", "") in ("1", "true", "yes")
+    return _store(request).add(name, content, tag, note, picture)
+
+
+async def pictures(request: Request) -> Any:
+    """Device pictures by order number (squeezed, lower case) -> document id."""
+    return {"items": _store(request).pictures()}
 
 
 async def get_raw(request: Request) -> Any:
@@ -52,6 +58,7 @@ async def patch_doc(request: Request) -> Any:
         tag=data.get("tag"),
         note=data.get("note"),
         name=data.get("name"),
+        picture=data.get("picture") if isinstance(data.get("picture"), bool) else None,
     )
 
 
@@ -63,6 +70,7 @@ async def delete_doc(request: Request) -> Any:
 def routes() -> list[Route]:
     return [
         route("/api/docs", list_docs),
+        route("/api/docs/pictures", pictures),
         route("/api/docs", upload, ["PUT", "POST"]),
         route("/api/docs/{id:str}/raw", get_raw),
         route("/api/docs/{id:str}", patch_doc, ["PATCH"]),

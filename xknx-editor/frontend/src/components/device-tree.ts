@@ -8,13 +8,21 @@ import {
   type Topology,
 } from "../api.js";
 import { icon } from "../icons.js";
-import { store } from "../store.js";
+import { pictureKey, store } from "../store.js";
 import { dropProduct, isProductDrag } from "../product-drop.js";
 import { t as tr } from "../i18n.js";
 
 @customElement("xknx-device-tree")
 export class DeviceTree extends LitElement {
   static styles = css`
+    img.thumb {
+      width: 18px;
+      height: 18px;
+      object-fit: contain;
+      border-radius: 3px;
+      background: #fff;
+      flex: none;
+    }
     sl-button::part(label) {
       display: inline-flex;
       align-items: center;
@@ -83,6 +91,9 @@ export class DeviceTree extends LitElement {
   @state() private collapsed = new Set<string>();
   @state() private fetching = false;
   @state() private diagram = false;
+  /** Device pictures by order number, for the thumbnails. */
+  @state() private pictures: Record<string, string> = {};
+  private picturesRev = -1;
   private unsubscribe = () => {};
   private loadedRevision = -1;
 
@@ -102,8 +113,26 @@ export class DeviceTree extends LitElement {
         void dropProduct(e);
       }
     });
-    this.unsubscribe = store.subscribe(() => this.sync());
+    this.unsubscribe = store.subscribe(() => {
+      this.loadPictures();
+      this.sync();
+    });
+    this.loadPictures();
     void this.sync();
+  }
+
+  private loadPictures(): void {
+    if (this.picturesRev === store.docsRevision) return;
+    this.picturesRev = store.docsRevision;
+    void store.pictures().then((m) => (this.pictures = m));
+  }
+
+  /** A device's picture as a thumbnail, or the chip icon. */
+  private thumb(orderNumber: string) {
+    const id = this.pictures[pictureKey(orderNumber)];
+    return id
+      ? html`<img class="thumb" src="api/docs/${id}/raw" alt="" loading="lazy" />`
+      : icon("cpu", 14);
   }
 
   disconnectedCallback(): void {
@@ -261,7 +290,7 @@ export class DeviceTree extends LitElement {
                                             class="node device ${d.resolved ? "" : "unresolved"} ${store.selectedDevice === d.id ? "selected" : ""}"
                                             @click=${() => store.select(d.id)}
                                           >
-                                            ${icon("cpu", 14)}<span class="addr"
+                                            ${this.thumb(d.order_number)}<span class="addr"
                                               >${d.individual_address ?? "-.-.-"}</span
                                             ><span
                                               class="name"

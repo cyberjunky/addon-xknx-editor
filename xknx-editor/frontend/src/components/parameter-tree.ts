@@ -1,6 +1,7 @@
 import { LitElement, css, html, nothing, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { UiNode, Widget } from "../api.js";
+import { t as tr } from "../i18n.js";
 
 /** Renders the application's parameter tree; one renderer per widget kind. Emits `param-change`. */
 @customElement("xknx-parameter-tree")
@@ -99,16 +100,45 @@ export class ParameterTree extends LitElement {
     // The parameter pages go down the side, the way a commissioning tool lists them: a product
     // with twenty pages is unusable as a row of tabs, and the page itself then has the width.
     if (tabs.length > 1 && tabs.length === this.nodes.length) {
+      const pages = tabs.filter((t) => this.shows(t));
       return html`<sl-tab-group placement="start" class="pages">
-        ${tabs.map((t, i) => html`<sl-tab slot="nav" panel="t${i}">${t.text || `Tab ${i + 1}`}</sl-tab>`)}
-        ${tabs.map((t, i) => html`<sl-tab-panel name="t${i}">${t.children.map((c) => this.node(c))}</sl-tab-panel>`)}
+        ${pages.map((t, i) => html`<sl-tab slot="nav" panel="t${i}">${t.text || `Tab ${i + 1}`}</sl-tab>`)}
+        ${pages.map((t, i) => html`<sl-tab-panel name="t${i}">${t.children.map((c) => this.node(c))}</sl-tab-panel>`)}
       </sl-tab-group>`;
     }
     return html`${this.nodes.map((n) => this.node(n))}`;
   }
 
-  private node(n: UiNode): TemplateResult | typeof nothing {
+  /** Whether a page or block shows anything: product data carries service pages and blocks
+   * (SERV_CNTRL, LTE, ...) that have no visible parameter, which ETS does not show either. */
+  private shows(n: UiNode): boolean {
     switch (n.type) {
+      case "tab":
+      case "block":
+        return n.children.some((c) => this.shows(c));
+      case "separator":
+        return !!n.text;
+      case "parameter":
+      case "button":
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  private node(n: UiNode): TemplateResult | typeof nothing {
+    if ((n.type === "tab" || n.type === "block") && !this.shows(n)) return nothing;
+    switch (n.type) {
+      case "button":
+        return html`<div class="param ro">
+          <label></label>
+          <div>
+            <sl-tooltip
+              content=${tr("Runs a script of the product in ETS; this editor cannot run it.")}
+              ><sl-button size="small" disabled>${n.text}</sl-button></sl-tooltip
+            >
+          </div>
+        </div>`;
       case "tab":
         return html`<div class="block">
           <div class="title">${n.text}</div>

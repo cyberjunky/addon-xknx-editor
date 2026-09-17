@@ -123,6 +123,9 @@ class Store {
   /** A group address someone asked to see charted (monitor row, GA editor, statistics). Durable
    * for the same reason as `overviewIssue`: the Charts view may or may not be mounted yet. */
   chartRequest: { ga: string; name: string } | null = null;
+  /** Bumped when documents change; device pictures come from them. */
+  docsRevision = 0;
+  private pictureMap: Promise<Record<string, string>> | null = null;
   /** Devices the Compare view shows side by side. */
   compareIds: number[] = [];
   left: LeftTab = "topology";
@@ -221,6 +224,21 @@ class Store {
     this.bottom = tab;
     this.bottomOpen = true;
     this.persist();
+  }
+
+  docsChanged(): void {
+    this.docsRevision += 1;
+    this.pictureMap = null;
+    this.notify();
+  }
+
+  /** Device pictures: squeezed, lower-case order number -> document id. */
+  pictures(): Promise<Record<string, string>> {
+    this.pictureMap ??= api
+      .get<{ items: Record<string, string> }>("api/docs/pictures")
+      .then((r) => r.items)
+      .catch(() => ({}));
+    return this.pictureMap;
   }
 
   /** Open the Compare view on these devices (it lets the user add more). */
@@ -360,3 +378,8 @@ class Store {
 }
 
 export const store = new Store();
+
+/** The key a device picture is found under: its order number, squeezed and lower case. */
+export function pictureKey(orderNumber: string | null | undefined): string {
+  return (orderNumber ?? "").replace(/[\s\-_/.]+/g, "").toLowerCase();
+}

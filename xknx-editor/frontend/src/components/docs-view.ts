@@ -148,6 +148,7 @@ export class DocsView extends LitElement {
           );
       }
       store.say(`${files.length} ${tr("document(s) uploaded")}`, "success");
+      store.docsChanged();
       await this.load();
     } catch (e) {
       store.say(e instanceof ApiError ? e.message : String(e), "danger");
@@ -160,6 +161,7 @@ export class DocsView extends LitElement {
     if (!window.confirm(`${tr("Delete")} ${d.name}?`)) return;
     try {
       await api.delete(`api/docs/${d.id}`);
+      store.docsChanged();
       await this.load();
     } catch (e) {
       store.say(e instanceof ApiError ? e.message : String(e), "danger");
@@ -170,6 +172,7 @@ export class DocsView extends LitElement {
     const tag = window.prompt(tr("Tag (e.g. order number or device)"), d.tag);
     if (tag === null) return;
     await api.patch(`api/docs/${d.id}`, { tag });
+    store.docsChanged();
     await this.load();
   }
 

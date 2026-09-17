@@ -6,7 +6,7 @@ import { api, ApiError, type GroupAddress } from "../api.js";
 import { icon } from "../icons.js";
 import { store, type TelegramRecord } from "../store.js";
 import { t as tr } from "../i18n.js";
-import { PRESETS, localInput, presetRange } from "./monitor-view.js";
+import { PRESETS, guessValue, localInput, presetRange } from "./monitor-view.js";
 import { dptTitle, formatDpt, onDptNames } from "../dpt-format.js";
 
 /** [time, avg, min, max]; raw points carry the same value three times. */
@@ -37,8 +37,19 @@ type SeriesResponse = {
   points: Point[];
 };
 
-const COLORS = ["#03a9f4", "#ff9800", "#43a047", "#9c27b0"];
-const MAX_SERIES = 4;
+const COLORS = [
+  "#03a9f4",
+  "#ff9800",
+  "#43a047",
+  "#9c27b0",
+  "#e91e63",
+  "#00897b",
+  "#795548",
+  "#5c6bc0",
+];
+const MAX_SERIES = COLORS.length;
+/** The tab that overlays every open chart. */
+const ALL = "*";
 
 /** A group address the recorder has seen. */
 type Recorded = {
@@ -79,7 +90,7 @@ export class ChartsView extends LitElement {
       }
       :host {
         display: grid;
-        grid-template-rows: auto 1fr auto;
+        grid-template-rows: auto auto 1fr auto;
         height: 100%;
         font-size: 13px;
         min-height: 0;
@@ -140,10 +151,64 @@ export class ChartsView extends LitElement {
         padding: 0 2px;
         font-size: 13px;
       }
+      .tabs {
+        display: flex;
+        gap: 2px;
+        padding: 4px 8px 0;
+        border-bottom: 1px solid var(--ha-divider);
+        overflow-x: auto;
+      }
+      .tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 6px 5px 10px;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: none;
+        color: var(--ha-text-2);
+        cursor: pointer;
+        font: inherit;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .tab.active {
+        color: var(--ha-text);
+        border-bottom-color: var(--ha-primary);
+      }
+      .tab .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+      }
+      .tab .close {
+        border: 0;
+        background: none;
+        color: var(--ha-text-2);
+        cursor: pointer;
+        padding: 0 2px;
+        font-size: 12px;
+      }
       .plot {
         min-height: 0;
         overflow: hidden;
         padding: 4px 8px 0;
+      }
+      .tip {
+        position: absolute;
+        z-index: 10;
+        pointer-events: none;
+        background: var(--ha-card);
+        border: 1px solid var(--ha-divider);
+        border-radius: 6px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        padding: 3px 7px;
+        font-size: 12px;
+        white-space: nowrap;
+        transform: translate(10px, -50%);
+      }
+      .tip .when {
+        color: var(--ha-text-2);
       }
       .plot .uplot {
         font-family: inherit;
@@ -190,6 +255,8 @@ export class ChartsView extends LitElement {
   ];
 
   @state() private series: Series[] = [];
+  /** The chart on show: a group address, or ALL for every one overlaid. */
+  @state() private active = ALL;
   @state() private preset = "24h";
   @state() private customFrom = localInput(Date.now() / 1000 - 3600);
   @state() private customTo = localInput(Date.now() / 1000);
@@ -277,21 +344,47 @@ export class ChartsView extends LitElement {
     if (!fresh.length) return;
     this.lastTelegram = fresh[fresh.length - 1].id;
     let touched = false;
+    let visible = false;
     for (const t of fresh) {
       const s = this.series.find((x) => x.ga === t.destination);
       if (!s) continue;
-      const v = liveValue(t);
+      const v = liveValue(t, s.guessed || !s.dpt);
       if (v === null) continue;
       s.points.push([t.ts, v, v, v]);
       s.count += 1;
       touched = true;
+      if (this.shown().includes(s)) visible = true;
     }
-    if (touched && this.redraw === undefined)
-      this.redraw = window.setTimeout(() => {
-        this.redraw = undefined;
-        this.rebuild();
-        this.requestUpdate();
-      }, 1000);
+    if (!touched || this.redraw !== undefined) return;
+    this.redraw = window.setTimeout(() => {
+      this.redraw = undefined;
+      // A chart that had nothing to draw yet needs building; one on screen only takes the new
+      // data, so a zoom or a hover in progress is kept.
+      if (visible && this.plot) this.plot.setData(this.data(), false);
+      else if (visible) this.rebuild();
+      this.requestUpdate();
+    }, 500);
+  }
+
+  /** The series the plot draws: the active tab's, or all of them. */
+  private shown(): Series[] {
+    if (this.active === ALL) return this.series;
+    return this.series.filter((s) => s.ga === this.active);
+  }
+
+  private data(): uPlot.AlignedData {
+    const live = this.shown().filter((s) => s.points.length);
+    return uPlot.join(
+      live.map(
+        (s) =>
+          [s.points.map((p) => p[0]), s.points.map((p) => p[1])] as uPlot.AlignedData,
+      ),
+    );
+  }
+
+  private select(tab: string): void {
+    this.active = tab;
+    this.rebuild();
   }
 
   private async add(ga: string, name = ""): Promise<void> {
@@ -318,6 +411,7 @@ export class ChartsView extends LitElement {
       guessed: false,
     };
     this.series = [...this.series, entry];
+    this.active = ga;
     this.query = "";
     this.showMatches = false;
     await this.fetch(entry);
@@ -325,7 +419,13 @@ export class ChartsView extends LitElement {
   }
 
   private dropSeries(ga: string): void {
+    const index = this.series.findIndex((s) => s.ga === ga);
     this.series = this.series.filter((s) => s.ga !== ga);
+    if (this.active === ga)
+      this.active =
+        this.series[Math.min(index, this.series.length - 1)]?.ga ?? ALL;
+    if (this.series.length < 2 && this.active === ALL && this.series[0])
+      this.active = this.series[0].ga;
     this.rebuild();
   }
 
@@ -383,21 +483,14 @@ export class ChartsView extends LitElement {
     if (!host) return;
     this.plot?.destroy();
     this.plot = null;
-    const live = this.series.filter((s) => s.points.length);
+    const live = this.shown().filter((s) => s.points.length);
     if (!live.length) return;
     const { text, grid } = this.colors();
     // One y scale per unit, the first two get their own axis (left, right); the rest share the left.
     const units = [...new Set(live.map((s) => s.unit ?? ""))];
     const scaleOf = (u: string | null) =>
       units.indexOf(u ?? "") === 1 ? "y2" : "y";
-    const tables = live.map(
-      (s) =>
-        [
-          s.points.map((p) => p[0]),
-          s.points.map((p) => p[1]),
-        ] as uPlot.AlignedData,
-    );
-    const data = uPlot.join(tables);
+    const data = this.data();
     const paths =
       this.mode === "steps"
         ? uPlot.paths.stepped!({ align: 1 })
@@ -405,7 +498,12 @@ export class ChartsView extends LitElement {
     const opts: uPlot.Options = {
       width: Math.max(300, host.clientWidth - 16),
       height: Math.max(120, host.clientHeight - 8),
-      cursor: { drag: { x: true, y: false } },
+      cursor: {
+        drag: { x: true, y: false },
+        // Joined series have gaps where another address has a point; hover the nearest real one.
+        dataIdx: (u, seriesIdx, closest) => nearestValue(u, seriesIdx, closest),
+      },
+      plugins: [tooltip(live)],
       legend: { show: true, live: true },
       scales: { x: { time: true }, y: {}, y2: {} },
       axes: [
@@ -568,18 +666,6 @@ export class ChartsView extends LitElement {
               : nothing
           }
         </div>
-        ${this.series.map(
-          (s) =>
-            html`<span class="chip"
-              ><span class="dot" style="background:${s.color}"></span
-              ><span class="addr">${s.ga}</span> ${s.name}<button
-                title=${tr("Remove")}
-                @click=${() => this.dropSeries(s.ga)}
-              >
-                ✕
-              </button></span
-            >`,
-        )}
         <span style="flex:1"></span>
         <sl-select
           size="small"
@@ -634,10 +720,37 @@ export class ChartsView extends LitElement {
           >${tr("Refresh")}</sl-button
         >
       </div>
+      ${
+        this.series.length
+          ? html`<div class="tabs">
+              ${this.series.length > 1 ? html`<button class="tab ${this.active === ALL ? "active" : ""}" @click=${() => this.select(ALL)}>${tr("All")} (${this.series.length})</button>` : nothing}
+              ${this.series.map(
+                (s) =>
+                  html`<button
+                    class="tab ${this.active === s.ga || (this.active === ALL && this.series.length === 1) ? "active" : ""}"
+                    title=${`${s.ga} ${s.name}`}
+                    @click=${() => this.select(s.ga)}
+                  >
+                    <span class="dot" style="background:${s.color}"></span
+                    ><span class="addr">${s.ga}</span> ${s.name}
+                    <span
+                      class="close"
+                      title=${tr("Remove")}
+                      @click=${(e: Event) => {
+                        e.stopPropagation();
+                        this.dropSeries(s.ga);
+                      }}
+                      >✕</span
+                    >
+                  </button>`,
+              )}
+            </div>`
+          : html`<div></div>`
+      }
       <div class="plot">
         ${
           this.series.length
-            ? this.series.some((s) => s.points.length)
+            ? this.shown().some((s) => s.points.length)
               ? nothing
               : this.renderNoValues()
             : html`<div class="empty">
@@ -692,9 +805,75 @@ export class ChartsView extends LitElement {
   }
 }
 
-/** The chartable value of a live telegram, or null. */
-function liveValue(t: TelegramRecord): number | null {
+/** The chartable value of a live telegram, or null. An address without a datapoint type is read
+ * from its payload, the way the recorded series was. */
+function liveValue(t: TelegramRecord, fromPayload: boolean): number | null {
   if (typeof t.value === "number") return t.value;
   if (typeof t.value === "boolean") return t.value ? 1 : 0;
-  return null;
+  if (!fromPayload || t.destination_kind !== "group") return null;
+  const guess = guessValue(t.raw);
+  if (!guess) return null;
+  if (guess.text === "on") return 1;
+  if (guess.text === "off") return 0;
+  const n = parseFloat(guess.text);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** The index of the nearest non-empty value of one series around the cursor. */
+function nearestValue(u: uPlot, seriesIdx: number, closest: number): number {
+  const ys = u.data[seriesIdx] as (number | null | undefined)[];
+  if (!ys || ys[closest] !== null && ys[closest] !== undefined) return closest;
+  const xs = u.data[0];
+  const x = xs[closest];
+  let left = closest - 1;
+  let right = closest + 1;
+  while (left >= 0 && (ys[left] === null || ys[left] === undefined)) left--;
+  while (right < ys.length && (ys[right] === null || ys[right] === undefined)) right++;
+  if (left < 0) return right < ys.length ? right : closest;
+  if (right >= ys.length) return left;
+  return x - xs[left] <= xs[right] - x ? left : right;
+}
+
+/** A label beside the line under the cursor: time and value, per series. */
+function tooltip(series: Series[]): uPlot.Plugin {
+  let tips: HTMLDivElement[] = [];
+  return {
+    hooks: {
+      init: (u) => {
+        tips = series.map(() => {
+          const el = document.createElement("div");
+          el.className = "tip";
+          el.style.display = "none";
+          u.over.appendChild(el);
+          return el;
+        });
+      },
+      setCursor: (u) => {
+        const { left } = u.cursor;
+        series.forEach((s, i) => {
+          const tip = tips[i];
+          const idx = u.cursor.idxs?.[i + 1];
+          const v = idx === null || idx === undefined ? null : (u.data[i + 1][idx] as number | null | undefined);
+          if (left === undefined || left < 0 || v === null || v === undefined || !u.series[i + 1].show) {
+            tip.style.display = "none";
+            return;
+          }
+          const x = u.valToPos(u.data[0][idx!], "x");
+          const y = u.valToPos(v, u.series[i + 1].scale ?? "y");
+          const when = new Date(u.data[0][idx!] * 1000).toLocaleString();
+          tip.style.display = "block";
+          tip.style.left = `${x}px`;
+          tip.style.top = `${y}px`;
+          tip.style.borderColor = s.color;
+          tip.innerHTML = "";
+          const value = document.createElement("b");
+          value.textContent = `${fmt(v)}${s.unit ? ` ${s.unit}` : ""}`;
+          const time = document.createElement("div");
+          time.className = "when";
+          time.textContent = series.length > 1 ? `${s.ga} · ${when}` : when;
+          tip.append(value, time);
+        });
+      },
+    },
+  };
 }

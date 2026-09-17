@@ -25,9 +25,38 @@ class Dpt:
     text: str  # switch
     main_text: str  # 1-bit
     size_bits: int | None
+    unit: str | None = None  # °C, m³, l/h
+    number: str = ""  # 9.001, or 9 for a main type
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def _xknx_unit(main: int, sub: int | None) -> str | None:
+    """The unit xknx knows for a sub-type; the master data leaves many of them out."""
+    if sub is None:
+        return None
+    try:
+        from xknx.dpt import DPTBase
+
+        transcoder = DPTBase.parse_transcoder(f"{main}.{sub:03d}")
+    except Exception:  # noqa: BLE001 - a type xknx does not implement has no unit here
+        return None
+    unit = getattr(transcoder, "unit", None) if transcoder is not None else None
+    return unit or None
+
+
+def _with_numbers(dpts: list[Dpt]) -> list[Dpt]:
+    from dataclasses import replace
+
+    return [
+        replace(
+            d,
+            number=f"{d.main}.{d.sub:03d}" if d.sub is not None else str(d.main),
+            unit=d.unit or _xknx_unit(d.main, d.sub),
+        )
+        for d in dpts
+    ]
 
 
 def _local(tag: object) -> str:
@@ -56,9 +85,10 @@ def parse_dpts(xml_bytes: bytes) -> list[Dpt]:
                 sub = int(st.get("Number") or sid.rsplit("-", 1)[-1])
             except ValueError:
                 continue
-            out.append(Dpt(sid, main, sub, st.get("Name") or sid, st.get("Text") or st.get("Name") or sid, main_text, int(size) if size and size.isdigit() else None))
+            unit = next((el.get("Unit") for el in st.iter() if el.get("Unit")), None)
+            out.append(Dpt(sid, main, sub, st.get("Name") or sid, st.get("Text") or st.get("Name") or sid, main_text, int(size) if size and size.isdigit() else None, unit))
     out.sort(key=lambda d: (d.main, d.sub if d.sub is not None else -1))
-    return out
+    return _with_numbers(out)
 
 
 class DptCatalog:
@@ -86,7 +116,7 @@ class DptCatalog:
             except Exception as exc:  # noqa: BLE001 - offline first start; fall back to a short list
                 self.error = f"{type(exc).__name__}: {exc}"
                 log.warning("master data unavailable (%s); using the built-in datapoint list", self.error)
-                self._dpts = [Dpt(f"DPST-{m}-{s}", m, s, n, t, mt, b) for m, s, n, t, mt, b in _FALLBACK]
+                self._dpts = _with_numbers([Dpt(f"DPST-{m}-{s}", m, s, n, t, mt, b) for m, s, n, t, mt, b in _FALLBACK])
         return self._dpts
 
 

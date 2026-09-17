@@ -39,6 +39,7 @@ CONTENT_TYPES = {
     ".knxprod": "application/octet-stream",
 }
 INLINE = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".txt", ".md", ".csv"}
+IMAGES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}
 MAX_BYTES = 50 * 1024 * 1024
 _SAFE = re.compile(r"[^A-Za-z0-9._ ()\-]+")
 
@@ -47,6 +48,22 @@ class DocStore:
     def __init__(self, config_dir: Path) -> None:
         self.dir = config_dir / "docs"
         self.index_path = self.dir / "index.json"
+
+    def pictures(self) -> dict[str, str]:
+        """``tag key -> document id`` of the picture for each tag (an order number, usually): the
+        image marked as the picture, else the newest image with that tag."""
+        out: dict[str, str] = {}
+        marked: set[str] = set()
+        for d in self.list():  # newest first
+            if d.get("ext") not in IMAGES or not d.get("tag"):
+                continue
+            key = tag_key(d["tag"])
+            if d.get("picture") and key not in marked:
+                out[key] = d["id"]
+                marked.add(key)
+            elif key not in out:
+                out[key] = d["id"]
+        return out
 
     def _load(self) -> dict[str, dict[str, Any]]:
         try:
@@ -64,13 +81,13 @@ class DocStore:
         if tag:
             needle = tag.strip().lower()
             items = [d for d in items if needle and needle in (d.get("tag") or "").lower()]
-        items.sort(key=lambda d: d.get("uploaded", ""), reverse=True)
+        items.sort(key=lambda d: (d.get("uploaded", ""), d.get("uploaded_ns", 0)), reverse=True)
         return items
 
     def _file(self, doc_id: str, meta: dict[str, Any]) -> Path:
         return self.dir / f"{doc_id}{meta.get('ext', '')}"
 
-    def add(self, filename: str, content: bytes, tag: str = "", note: str = "") -> dict[str, Any]:
+    def add(self, filename: str, content: bytes, tag: str = "", note: str = "", picture: bool = False) -> dict[str, Any]:
         if not content:
             raise ApiError("Empty upload")
         if len(content) > MAX_BYTES:
@@ -92,6 +109,8 @@ class DocStore:
             "tag": tag.strip(),
             "note": note.strip(),
             "uploaded": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "uploaded_ns": time.time_ns(),  # orders uploads within the same second
+            "picture": bool(picture) and ext in IMAGES,
         }
         self._save(index)
         return {"id": doc_id, **index[doc_id]}
@@ -105,11 +124,23 @@ class DocStore:
             raise NotFound(f"Document {doc_id} file is missing")
         return path, meta
 
-    def update(self, doc_id: str, tag: str | None = None, note: str | None = None, name: str | None = None) -> dict[str, Any]:
+    def update(
+        self, doc_id: str, tag: str | None = None, note: str | None = None, name: str | None = None, picture: bool | None = None
+    ) -> dict[str, Any]:
         index = self._load()
         meta = index.get(doc_id)
         if meta is None:
             raise NotFound(f"No document {doc_id}")
+        if picture is not None:
+            if picture and meta.get("ext") not in IMAGES:
+                raise ApiError("Only an image can be a device picture")
+            if picture:
+                # One picture per tag: the others with the same tag stop being it.
+                key = tag_key(meta.get("tag") or "")
+                for other in index.values():
+                    if other is not meta and tag_key(other.get("tag") or "") == key:
+                        other["picture"] = False
+            meta["picture"] = bool(picture)
         if tag is not None:
             meta["tag"] = tag.strip()
         if note is not None:
@@ -129,3 +160,9 @@ class DocStore:
             raise NotFound(f"No document {doc_id}")
         self._file(doc_id, meta).unlink(missing_ok=True)
         self._save(index)
+
+
+def tag_key(tag: str) -> str:
+    """Order numbers are written with and without spaces or hyphens ("5WG1 257-3AB32"); compare a
+    squeezed, lower-case form."""
+    return re.sub(r"[\s\-_/.]+", "", tag or "").lower()

@@ -976,6 +976,38 @@ export const VIEWS_NL: Record<string, string> = {
     "{n} van {m}",
   "{n} device(s) are left out: their product data is not in the catalog.":
     "{n} apparaat/apparaten weggelaten: hun productdata staat niet in de catalogus.",
+  "Add picture":
+    "Afbeelding toevoegen",
+  "DPT: 9, 9.001, temperature…":
+    "DPT: 9, 9.001, temperatuur…",
+  "Datapoint types…":
+    "Datapunttypen…",
+  "Device name":
+    "Apparaatnaam",
+  "IP address":
+    "IP-adres",
+  "MAC address":
+    "MAC-adres",
+  "Open the picture":
+    "Afbeelding openen",
+  "Open web interface":
+    "Webinterface openen",
+  "Read mask, application, serial number, error state and, for IP devices, the IP address from the device":
+    "Masker, applicatie, serienummer, foutstatus en, bij IP-apparaten, het IP-adres uit het apparaat lezen",
+  "Runs a script of the product in ETS; this editor cannot run it.":
+    "Voert in ETS een script van het product uit; deze editor kan dat niet.",
+  "Search: 9.001, temperature, °C, m³…":
+    "Zoeken: 9.001, temperatuur, °C, m³…",
+  "Unit":
+    "Eenheid",
+  "Upload a product picture; it is kept in Documents, tagged with the order number, and shown for every device with this order number":
+    "Upload een productafbeelding; die wordt bij Documenten bewaard met het bestelnummer als label en getoond bij elk apparaat met dit bestelnummer",
+  "datapoint types":
+    "datapunttypen",
+  "every":
+    "alle",
+  "unknown type":
+    "onbekend type",
 };
 
 export const VIEWS_DE: Record<string, string> = {
@@ -1958,4 +1990,36 @@ export const VIEWS_DE: Record<string, string> = {
     "{n} von {m}",
   "{n} device(s) are left out: their product data is not in the catalog.":
     "{n} Gerät(e) ausgelassen: ihre Produktdaten sind nicht im Katalog.",
+  "Add picture":
+    "Bild hinzufügen",
+  "DPT: 9, 9.001, temperature…":
+    "DPT: 9, 9.001, Temperatur…",
+  "Datapoint types…":
+    "Datenpunkttypen…",
+  "Device name":
+    "Gerätename",
+  "IP address":
+    "IP-Adresse",
+  "MAC address":
+    "MAC-Adresse",
+  "Open the picture":
+    "Bild öffnen",
+  "Open web interface":
+    "Weboberfläche öffnen",
+  "Read mask, application, serial number, error state and, for IP devices, the IP address from the device":
+    "Maske, Applikation, Seriennummer, Fehlerstatus und bei IP-Geräten die IP-Adresse aus dem Gerät lesen",
+  "Runs a script of the product in ETS; this editor cannot run it.":
+    "Führt in ETS ein Skript des Produkts aus; dieser Editor kann das nicht.",
+  "Search: 9.001, temperature, °C, m³…":
+    "Suchen: 9.001, Temperatur, °C, m³…",
+  "Unit":
+    "Einheit",
+  "Upload a product picture; it is kept in Documents, tagged with the order number, and shown for every device with this order number":
+    "Ein Produktbild hochladen; es wird unter Dokumente mit der Bestellnummer als Tag gespeichert und bei jedem Gerät mit dieser Bestellnummer angezeigt",
+  "datapoint types":
+    "Datenpunkttypen",
+  "every":
+    "alle",
+  "unknown type":
+    "unbekannter Typ",
 };

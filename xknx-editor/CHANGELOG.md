@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.10 (2026-09-17)
+
+- Charts: every open group address is a tab of its own (plus All, to overlay them); the chart on
+  show keeps growing live without losing a zoom, including addresses read from their payloads, and
+  hovering the line shows the time and value.
+- Datapoint types carry their unit (°C, m³, l/h ...), from the master data or xknx. Every place a
+  DPT is picked - the group address editor, the new-address dialog, the monitor's DPT filter -
+  searches number, name and unit in a dropdown; Help → Datapoint types lists them all.
+- Read from device also reads an IP device's IP address, MAC address and name, with a link to its
+  web interface - where a device such as the Gira S1 is configured.
+- Parameter pages and blocks with nothing to show (SERV_CNTRL, LTE) are hidden, as in ETS; an ETS
+  script button is shown, disabled, instead of silently left out.
+- Device pictures: add one on the device's first tab (kept in Documents, tagged with the order
+  number); it shows there and as a thumbnail in the topology tree.
+- The right dock reads Project, History, Health; the Diagnostics tab has bold headings and a
+  tighter layout, and so do the device editor's sections.
+
 ## 0.3.9 (2026-09-17)
 
 - A parameter block without a title of its own no longer shows its internal name ("Grid") as a

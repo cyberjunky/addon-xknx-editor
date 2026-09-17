@@ -12,7 +12,31 @@ export const DPT_STYLES: { id: DptStyle; label: string }[] = [
   { id: "friendly", label: "Friendly (name)" },
 ];
 
-type Dpt = { id: string; name: string; text: string; main_text: string };
+export type Dpt = {
+  id: string;
+  main: number;
+  sub: number | null;
+  name: string;
+  text: string;
+  main_text: string;
+  size_bits: number | null;
+  unit: string | null;
+  number: string;
+};
+
+let dpts: Promise<Dpt[]> | null = null;
+
+/** Every datapoint type from the master data (one request per page load). */
+export function loadDpts(): Promise<Dpt[]> {
+  dpts ??= api
+    .get<{ items: Dpt[] }>("api/dpts")
+    .then((r) => r.items)
+    .catch((e) => {
+      dpts = null;
+      throw e;
+    });
+  return dpts;
+}
 
 let style: DptStyle = "numeric";
 try {
@@ -29,10 +53,11 @@ const listeners = new Set<() => void>();
 
 /** Load the DPT names once (for the friendly style); listeners re-render when they arrive. */
 export function loadDptNames(): Promise<void> {
-  loading ??= api
-    .get<{ items: Dpt[] }>("api/dpts")
-    .then((r) => {
-      names = new Map(r.items.map((d) => [d.id, d.text || d.name]));
+  loading ??= loadDpts()
+    .then((items) => {
+      names = new Map(
+        items.map((d) => [d.id, `${d.text || d.name}${d.unit && !(d.text || "").includes(d.unit) ? ` (${d.unit})` : ""}`]),
+      );
       for (const fn of listeners) fn();
     })
     .catch(() => {
