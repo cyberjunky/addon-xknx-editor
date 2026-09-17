@@ -115,7 +115,8 @@ def node_dict(node: UiNode) -> dict[str, Any]:
         return {
             "type": "block",
             "id": node.id,
-            "text": node.text or node.name or "",
+            # Only the block's Text is shown; its Name ("Grid", "Block_1") is internal to the product.
+            "text": node.text or "",
             "inline": node.inline,
             "layout": plain(node.layout),
             "row_labels": list(node.row_labels),

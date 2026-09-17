@@ -292,3 +292,12 @@ def test_bus_tools_need_a_connection(client: TestClient) -> None:
     ):
         assert client.post(path, json=payload).status_code == 409, path
     assert client.get("/api/bus/programming-mode/serials").status_code == 409
+
+
+def test_block_title_is_its_text_not_its_internal_name() -> None:
+    from xknxeditor.prod.parser_v2.ui import UiParameterBlock
+
+    from xknxeditor_web.serialize import node_dict
+
+    assert node_dict(UiParameterBlock(id="b1", children=(), name="Grid"))["text"] == ""
+    assert node_dict(UiParameterBlock(id="b2", children=(), name="Grid", text="Channel A"))["text"] == "Channel A"

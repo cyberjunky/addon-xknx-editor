@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.9 (2026-09-17)
+
+- A parameter block without a title of its own no longer shows its internal name ("Grid") as a
+  heading.
+
 ## 0.3.8 (2026-09-16)
 
 - Device tools: Ping (does it answer, how fast), Identify (flashes the programming LED), Verify
