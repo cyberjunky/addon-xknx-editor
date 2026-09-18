@@ -363,6 +363,7 @@ def project_objects(ed: Editor) -> dict[str, Any]:
                     "device_id": d["id"],
                     "device_name": d["name"],
                     "individual_address": d["individual_address"],
+                    "line": d["line"],
                     "room": d["room"],
                     "links": [
                         {
@@ -508,7 +509,7 @@ def manufacturers(ed: Editor) -> dict[str, Any]:
                     "application_name": next((x["application_name"] for x in devices if x["application_name"]), ""),
                     "resolved": all(x["resolved"] for x in devices),
                     "devices": [
-                        {"id": x["id"], "name": x["name"], "individual_address": x["individual_address"], "room": x["room"], "download_required": x["download_required"]}
+                        {"id": x["id"], "name": x["name"], "individual_address": x["individual_address"], "line": x["line"], "room": x["room"], "download_required": x["download_required"]}
                         for x in devices
                     ],
                 }

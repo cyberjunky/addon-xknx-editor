@@ -2,7 +2,7 @@ import { LitElement, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { api, type DeviceSummary } from "../api.js";
 import { icon } from "../icons.js";
-import { store } from "../store.js";
+import { deviceAddress, store } from "../store.js";
 import { dropProduct, isProductDrag } from "../product-drop.js";
 import { t as tr } from "../i18n.js";
 
@@ -153,7 +153,7 @@ export class DevicesList extends LitElement {
             @click=${() => store.select(d.id)}
             title=${d.product_name}
           >
-            <span class="addr">${d.individual_address ?? "-.-.-"}</span
+            <span class="addr">${deviceAddress(d.individual_address, d.line)}</span
             ><span class="name"
               >${d.name || d.product_name}${d.room ? html`<small>${d.room}</small>` : nothing}</span
             >

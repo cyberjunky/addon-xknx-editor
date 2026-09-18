@@ -590,6 +590,8 @@ class Editor:
             "id": d.id,
             "name": d.name,
             "individual_address": ia,
+            # The line a device sits on, so one without an address still reads "4.1.-" as in ETS.
+            "line": f"{area.address}.{line.address}",
             "address": d.address,
             "description": d.description,
             "product_name": d.product_name,
@@ -710,7 +712,10 @@ class Editor:
         except ApiError as exc:
             data["resolved"] = False
             data["error"] = str(exc)
-        data["space_id"] = self._row(device_id).space_id
+        row = self._row(device_id)
+        data["space_id"] = row.space_id
+        line = row.segment.line
+        data["line"] = f"{line.area.address}.{line.address}"
         from xknxeditor_web.reports import rtf_to_text
 
         data["comment_text"] = rtf_to_text(data.get("comment") or "")
@@ -1129,9 +1134,23 @@ class Editor:
 
     def spaces(self, installation: int = 0) -> dict[str, Any]:
         pid = self._pid()
+        lines = {d["id"]: d["line"] for d in self.devices()}
+
+        def with_lines(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            # The building tree carries no topology; the line lets a device without an address
+            # still read "4.1.-".
+            for node in nodes:
+                for device in node.get("devices", []):
+                    device["line"] = lines.get(device["id"])
+                with_lines(node.get("children", []))
+            return nodes
+
+        unassigned = plain(self.projects.unassigned_devices(pid, installation))
+        for device in unassigned:
+            device["line"] = lines.get(device["id"])
         return {
-            "tree": plain(self.projects.space_tree(pid, installation)),
-            "unassigned": plain(self.projects.unassigned_devices(pid, installation)),
+            "tree": with_lines(plain(self.projects.space_tree(pid, installation))),
+            "unassigned": unassigned,
         }
 
     def create_space(self, installation: int, space_type: str, name: str, parent_id: int | None) -> int:

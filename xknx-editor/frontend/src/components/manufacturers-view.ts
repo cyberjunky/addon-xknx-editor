@@ -2,13 +2,14 @@ import { LitElement, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { api } from "../api.js";
 import { icon } from "../icons.js";
-import { store } from "../store.js";
+import { deviceAddress, store } from "../store.js";
 import { t as tr } from "../i18n.js";
 
 type MfrDevice = {
   id: number;
   name: string;
   individual_address: string | null;
+  line?: string | null;
   room: string;
   download_required: boolean;
 };
@@ -285,7 +286,7 @@ export class ManufacturersView extends LitElement {
                             class="row device ${store.selectedDevice === d.id ? "selected" : ""}"
                             @click=${() => store.select(d.id)}
                           >
-                            <span class="addr">${d.individual_address ?? "-.-.-"}</span>
+                            <span class="addr">${deviceAddress(d.individual_address, d.line)}</span>
                             <span class="ellipsis">${d.name}</span>
                             ${d.room
                               ? html`<span class="muted ellipsis">${d.room}</span>`

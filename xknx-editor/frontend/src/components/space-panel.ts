@@ -1,7 +1,7 @@
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { api, ApiError, type DeviceSummary } from "../api.js";
-import { store } from "../store.js";
+import { deviceAddress, store } from "../store.js";
 import { t as tr } from "../i18n.js";
 
 type Detail = {
@@ -183,7 +183,7 @@ export class SpacePanel extends LitElement {
               ${d.devices.map(
                 (x) =>
                   html`<tr class="dev" @click=${() => store.select(x.id)}>
-                    <td class="addr">${x.individual_address ?? "-.-.-"}</td>
+                    <td class="addr">${deviceAddress(x.individual_address, x.line)}</td>
                     <td>${x.room ?? ""}</td>
                     <td>${x.name || x.product_name}</td>
                     <td class="muted">${x.description ?? ""}</td>

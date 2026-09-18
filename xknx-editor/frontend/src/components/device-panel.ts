@@ -10,7 +10,7 @@ import {
 } from "../api.js";
 import { dptTitle, formatDpt, onDptNames } from "../dpt-format.js";
 import { icon } from "../icons.js";
-import { pictureKey, store } from "../store.js";
+import { deviceAddress, pictureKey, store } from "../store.js";
 import "./device-connections.js";
 import "./docs-view.js";
 import "./telegram-list.js";
@@ -44,6 +44,7 @@ type Device = {
   parameter_count?: number;
   com_object_count?: number;
   space_id?: number | null;
+  line?: string | null;
 };
 
 type Overview = {
@@ -836,7 +837,7 @@ export class DevicePanel extends LitElement {
       >
         <sl-tab slot="nav" panel="overview" ?active=${this.tab === "overview"}
           ><span class="devname"
-            ><span class="addr">${d.individual_address ?? "-.-.-"}</span>
+            ><span class="addr">${deviceAddress(d.individual_address, d.line)}</span>
             ${shown}</span
           ></sl-tab
         >

@@ -2,7 +2,7 @@ import { LitElement, css, html, nothing, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { api, ApiError } from "../api.js";
 import { icon } from "../icons.js";
-import { store } from "../store.js";
+import { deviceAddress, store } from "../store.js";
 import { dropProduct, isProductDrag } from "../product-drop.js";
 import { t as tr } from "../i18n.js";
 
@@ -10,6 +10,7 @@ type SpaceDevice = {
   id: number;
   name: string;
   individual_address: string | null;
+  line?: string | null;
   product_name: string;
 };
 type Space = {
@@ -252,7 +253,7 @@ export class SpacesView extends LitElement {
               }}
             >
               ${icon("cpu", 12)}<span class="addr"
-                >${d.individual_address ?? "-.-.-"}</span
+                >${deviceAddress(d.individual_address, d.line)}</span
               >${d.name || d.product_name}<span class="actions"
                 ><sl-button
                   size="small"

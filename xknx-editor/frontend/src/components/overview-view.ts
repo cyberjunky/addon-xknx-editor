@@ -2,7 +2,7 @@ import { LitElement, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { api, ApiError, type DeviceSummary, type Job } from "../api.js";
 import { icon } from "../icons.js";
-import { store } from "../store.js";
+import { deviceAddress, store } from "../store.js";
 import { t as tr } from "../i18n.js";
 
 type Online = {
@@ -364,7 +364,7 @@ export class OverviewView extends LitElement {
               </td>
               <td style="text-align:center">${this.renderOnline(d)}</td>
               <td style="text-align:center">${this.renderVerified(d)}</td>
-              <td class="addr">${d.individual_address ?? "-.-.-"}</td>
+              <td class="addr">${deviceAddress(d.individual_address, d.line)}</td>
               <td>
                 <sl-select
                   size="small"

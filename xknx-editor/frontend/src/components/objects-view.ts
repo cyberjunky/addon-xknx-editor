@@ -2,7 +2,7 @@ import { LitElement, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { api } from "../api.js";
 import { icon } from "../icons.js";
-import { store } from "../store.js";
+import { deviceAddress, store } from "../store.js";
 import { t as tr } from "../i18n.js";
 import { dptTitle, formatDpt, onDptNames } from "../dpt-format.js";
 
@@ -36,6 +36,7 @@ type GroupObject = {
   device_id: number;
   device_name: string;
   individual_address: string | null;
+  line?: string | null;
   room: string;
   links: ObjectLink[];
 };
@@ -387,7 +388,7 @@ export class ObjectsView extends LitElement {
                   class="device"
                   title=${o.room || ""}
                   @click=${() => store.select(o.device_id)}
-                  ><span class="addr">${o.individual_address ?? "-.-.-"}</span>
+                  ><span class="addr">${deviceAddress(o.individual_address, o.line)}</span>
                   ${o.device_name}</span
                 >
               </td>

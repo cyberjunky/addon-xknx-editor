@@ -379,6 +379,15 @@ class Store {
 
 export const store = new Store();
 
+/** How a device's address reads: "4.1.5", or "4.1.-" for one without an address (ETS writes it
+ * that way too), or "-.-.-" when not even the line is known. */
+export function deviceAddress(
+  individualAddress: string | null | undefined,
+  line?: string | null,
+): string {
+  return individualAddress ?? (line ? `${line}.-` : "-.-.-");
+}
+
 /** The key a device picture is found under: its order number, squeezed and lower case. */
 export function pictureKey(orderNumber: string | null | undefined): string {
   return (orderNumber ?? "").replace(/[\s\-_/.]+/g, "").toLowerCase();

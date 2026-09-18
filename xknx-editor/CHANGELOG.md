@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.14 (2026-09-18)
+
+- A device without an individual address reads "4.1.-", the line it sits on, the way ETS writes it,
+  instead of "-.-.-" - in the topology tree, the device lists, the buildings and the device editor.
+
 ## 0.3.13 (2026-09-18)
 
 - A device without an application program (a power supply, a plain coupler) is added without an

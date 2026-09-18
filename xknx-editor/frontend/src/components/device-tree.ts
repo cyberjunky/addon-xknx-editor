@@ -8,7 +8,7 @@ import {
   type Topology,
 } from "../api.js";
 import { icon } from "../icons.js";
-import { pictureKey, store } from "../store.js";
+import { deviceAddress, pictureKey, store } from "../store.js";
 import { dropProduct, isProductDrag } from "../product-drop.js";
 import { t as tr } from "../i18n.js";
 
@@ -291,7 +291,7 @@ export class DeviceTree extends LitElement {
                                             @click=${() => store.select(d.id)}
                                           >
                                             ${this.thumb(d.order_number)}<span class="addr"
-                                              >${d.individual_address ?? "-.-.-"}</span
+                                              >${deviceAddress(d.individual_address, d.line)}</span
                                             ><span
                                               class="name"
                                               title=${d.product_name}

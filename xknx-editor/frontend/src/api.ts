@@ -27,6 +27,8 @@ export type DeviceSummary = {
   id: number;
   name: string;
   individual_address: string | null;
+  /** The device's line ("4.1"), for one without an individual address. */
+  line?: string | null;
   address: number | null;
   description?: string;
   product_name: string;
