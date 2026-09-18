@@ -153,7 +153,7 @@ export class TopologyView extends LitElement {
           devCenters.push(cy);
           parts.push(svg`
             <g @click=${() => store.select(d.id)}>
-              <rect class="box device ${store.selectedDevice === d.id ? "selected" : ""} ${d.resolved ? "" : "unresolved"}" x=${COL[2]} y=${y} width=${DEV_W} height=${BOX_H}></rect>
+              <rect class="box device ${store.selectedDevice === d.id ? "selected" : ""} ${d.resolved || d.no_application ? "" : "unresolved"}" x=${COL[2]} y=${y} width=${DEV_W} height=${BOX_H}></rect>
               <text class="addr" x=${COL[2] + 6} y=${cy}>${d.individual_address ?? "-.-.-"}</text>
               <text x=${COL[2] + (this.compact ? 50 : 60)} y=${cy}>${(d.name || d.product_name).slice(0, this.compact ? 22 : 34)}</text>
             </g>`);

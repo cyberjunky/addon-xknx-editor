@@ -73,6 +73,7 @@ class Editor:
         self.pid: str | None = None
         self.path: Path | None = None
         self._program_to_app: dict[str, str] | None = None
+        self._products_without_application: set[str] | None = None
         self._app_cache: dict[str, Application] = {}
         self._views: dict[int, DeviceView] = {}
         self._online: OnlineCatalog | None = None
@@ -487,6 +488,7 @@ class Editor:
 
     def invalidate_catalog(self) -> None:
         self._program_to_app = None
+        self._products_without_application = None
         self._hardware_by_program = None
         self._application_names_cache = None
         self._app_cache.clear()
@@ -526,10 +528,11 @@ class Editor:
         """The catalog knows this product and it has no application program of its own."""
         if not product_ref_id:
             return False
-        return any(
-            p.product_ref_id == product_ref_id and p.application_id is None
-            for p in self.catalog.list_products()
-        )
+        if self._products_without_application is None:
+            self._products_without_application = {
+                p.product_ref_id for p in self.catalog.list_products() if p.application_id is None
+            }
+        return product_ref_id in self._products_without_application
 
     def _drop_views(self, *device_ids: int) -> None:
         if device_ids:
@@ -608,6 +611,9 @@ class Editor:
             "last_download": d.last_download,
             "space_id": d.space_id,
             "room": self._space_name(d.space_id),
+            # The catalog knows the product and it simply has no application program (a power
+            # supply, a plain coupler): nothing is missing, so the UI does not flag it.
+            "no_application": app is None and self._product_without_application(d.product_ref_id),
             "download_required": not (
                 d.individual_address_loaded and d.application_program_loaded and d.parameters_loaded and d.communication_part_loaded
             ),
@@ -712,6 +718,7 @@ class Editor:
         except ApiError as exc:
             data["resolved"] = False
             data["error"] = str(exc)
+            data["no_application"] = self._product_without_application(data.get("product_ref_id"))
         row = self._row(device_id)
         data["space_id"] = row.space_id
         line = row.segment.line

@@ -38,6 +38,8 @@ type Device = {
   parameters_loaded?: boolean;
   communication_part_loaded?: boolean;
   resolved: boolean;
+  /** The product has no application program at all (a power supply): not something to flag. */
+  no_application?: boolean;
   error?: string;
   application?: { id: string; name: string; version: string };
   dali?: boolean;
@@ -1234,7 +1236,11 @@ export class DevicePanel extends LitElement {
           ${
             d.resolved
               ? nothing
-              : html`<div class="warn">
+              : d.no_application
+                ? html`<div class="muted" style="padding:12px 0">
+                    ${tr("This product has no application program (a power supply or a plain coupler, for instance): it carries no parameters and no group objects, and is in the project for the topology and the bus load.")}
+                  </div>`
+                : html`<div class="warn">
                   ${d.error ?? "Application not in the catalog."}
                   <div class="row">
                     <sl-button

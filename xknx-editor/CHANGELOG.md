@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.18 (2026-09-18)
+
+- A device whose product has no application program (a power supply) is no longer shown in the
+  warning colour, and its note is plain text: nothing is missing, unlike a device whose product data
+  is not in the catalog.
+- The README explains how to connect an LLM client to the MCP server, including the `~/.claude.json`
+  route for Claude Code without the CLI.
+
 ## 0.3.17 (2026-09-18)
 
 - A line repeater's second segment survives the import: every device lands on the segment ETS put it

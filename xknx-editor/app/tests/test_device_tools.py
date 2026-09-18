@@ -362,8 +362,12 @@ def test_a_product_without_an_application_can_be_added(client: TestClient) -> No
         # Not programmed, so no individual address is handed out (ETS leaves one out as well).
         assert d["individual_address"] is None and d["resolved"] is False
         assert "no application program" in d["error"]
+        # Nothing is missing here, so the UI does not flag it like absent product data.
+        assert d["no_application"] is True
+        summary = next(x for x in client.get("/api/project/devices").json()["items"] if x["id"] == d["id"])
+        assert summary["no_application"] is True and summary["resolved"] is False
         assert client.get(f"/api/devices/{d['id']}/com-objects").status_code == 422
-        assert any(x["id"] == d["id"] for x in client.get("/api/project/devices").json()["items"])
+
     finally:
         editor.catalog.list_products = real  # type: ignore[assignment]
     assert product["product_ref_id"]

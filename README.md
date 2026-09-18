@@ -91,6 +91,53 @@ User documentation for the add-on itself is in [xknx-editor/DOCS.md](xknx-editor
 Options: `log_level`, `ingress_only` (only Home Assistant's Ingress proxy may reach the add-on),
 `mcp_token` (enables the MCP server at `/mcp` on the add-on port), `language` (product texts and UI).
 
+## Connecting an LLM client (MCP)
+
+The add-on speaks the Model Context Protocol, so a client such as Claude Desktop, Claude Code or
+Home Assistant's own MCP client can read and edit the open project, browse the catalog and drive
+the bus — the same live project and connection as the web UI, over 80 tools.
+
+1. **Pick a token.** Any random string; it is the password of the endpoint, not something Home
+   Assistant issues. On Windows:
+   `-join ((48..57) + (65..90) + (97..122) | Get-Random -Count 40 | % { [char]$_ })`
+2. **Enable the server.** Add-on → _Configuration_ → `mcp_token` → paste it, save, restart. Empty
+   keeps the server off.
+3. **Publish the port.** The endpoint is `http://<home-assistant>:<add-on port>/mcp/` (the port is
+   in the add-on log at start, 8099 by default). Ingress does not carry it, so the port has to be
+   open under _Network_. `/mcp` is reachable even with `ingress_only` on: the token is what
+   protects it.
+4. **Point the client at it.** Every request needs `Authorization: Bearer <mcp_token>`. Mind the
+   trailing slash: `/mcp` answers with a redirect to `/mcp/`, which not every client follows.
+
+Claude Desktop (`claude_desktop_config.json`) and any client with the same shape:
+
+```json
+{
+  "mcpServers": {
+    "xknx": {
+      "type": "http",
+      "url": "http://homeassistant.local:8099/mcp/",
+      "headers": { "Authorization": "Bearer <mcp_token>" }
+    }
+  }
+}
+```
+
+Claude Code, if the CLI is on the path:
+
+```
+claude mcp add --transport http --scope user xknx http://homeassistant.local:8099/mcp/ \
+  --header "Authorization: Bearer <mcp_token>"
+```
+
+Without the CLI, put the same `mcpServers` block at the top level of `~/.claude.json`
+(`C:\Users\<you>\.claude.json`), next to `projects`, and restart the client. Keep it there rather
+than in a project's `.mcp.json`, which would carry the token into the repository.
+
+Programming and monitor writes act on the real bus and cannot be undone; project edits are
+undoable. Treat the token like a password: anyone who reaches the port with it can program the
+installation.
+
 ## Repository layout
 
 ```

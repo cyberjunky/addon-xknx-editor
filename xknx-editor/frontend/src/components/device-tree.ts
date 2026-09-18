@@ -131,7 +131,7 @@ export class DeviceTree extends LitElement {
   private deviceRows(devices: DeviceSummary[]) {
     return devices.map(
       (d) => html`<div
-        class="node device ${d.resolved ? "" : "unresolved"} ${store.selectedDevice === d.id ? "selected" : ""}"
+        class="node device ${d.resolved || d.no_application ? "" : "unresolved"} ${store.selectedDevice === d.id ? "selected" : ""}"
         @click=${() => store.select(d.id)}
       >
         ${this.thumb(d.order_number)}<span class="addr"

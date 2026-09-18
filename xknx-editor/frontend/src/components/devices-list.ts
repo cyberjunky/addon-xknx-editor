@@ -149,7 +149,7 @@ export class DevicesList extends LitElement {
       ${rows.map(
         (d) =>
           html`<div
-            class="row ${d.resolved ? "" : "unresolved"} ${store.selectedDevice === d.id ? "selected" : ""}"
+            class="row ${d.resolved || d.no_application ? "" : "unresolved"} ${store.selectedDevice === d.id ? "selected" : ""}"
             @click=${() => store.select(d.id)}
             title=${d.product_name}
           >

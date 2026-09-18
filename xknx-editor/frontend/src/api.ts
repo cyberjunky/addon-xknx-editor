@@ -47,6 +47,8 @@ export type DeviceSummary = {
   room?: string;
   download_required?: boolean;
   resolved: boolean;
+  /** The product has no application program at all (a power supply): not something to flag. */
+  no_application?: boolean;
 };
 
 export type Segment = {
