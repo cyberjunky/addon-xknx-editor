@@ -23,6 +23,8 @@ from xknxeditor_web.recorder import parse_ga
 if TYPE_CHECKING:
     from starlette.applications import Starlette
 
+from xknxeditor_web import __version__
+
 log = logging.getLogger(__name__)
 
 INSTRUCTIONS = (
@@ -93,6 +95,9 @@ def build(app: Starlette, token: str) -> tuple[Any, Any]:
         streamable_http_path="/",
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )
+    # FastMCP takes no version and the SDK then reports its own, so a client's serverInfo read
+    # "xknx-editor 1.28.1" (the mcp package). Say which add-on is answering instead.
+    mcp._mcp_server.version = __version__  # noqa: SLF001
     state = app.state
 
     def ed() -> Any:

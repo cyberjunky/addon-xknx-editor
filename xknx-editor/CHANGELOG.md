@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.15 (2026-09-18)
+
+- The MCP server reports the add-on's version in `serverInfo` instead of the MCP SDK's ("1.28.1"),
+  which is what a client showed when it connected.
+
 ## 0.3.14 (2026-09-18)
 
 - A device without an individual address reads "4.1.-", the line it sits on, the way ETS writes it,

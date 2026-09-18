@@ -35,7 +35,10 @@ def test_token_required_even_with_ingress_only(mcp_client: TestClient) -> None:
 
 def test_tools_listed_and_callable(mcp_client: TestClient) -> None:
     init = _call(mcp_client, "initialize", {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}})
-    assert init["result"]["serverInfo"]["name"] == "xknx-editor"
+    from xknxeditor_web import __version__
+
+    # The add-on's version, not the MCP SDK's, which the SDK would report by default.
+    assert init["result"]["serverInfo"] == {"name": "xknx-editor", "version": __version__}
     listed = _call(mcp_client, "tools/list", id_=2)["result"]["tools"]
     names = {t["name"] for t in listed}
     assert {"status", "project_list_devices", "project_link_com_object", "connection_connect", "tools_extended_copy", "catalog_list_products"} <= names
