@@ -857,7 +857,9 @@ class Editor:
         app = self._resolve_app(product.hardware2program_ref_id)
         if segment_id is None:
             segment_id = self._default_segment()
-        if address is None:
+        # Only a device that runs an application program is addressed: a power supply or a plain
+        # coupler part is not programmed, and ETS leaves it without an individual address too.
+        if address is None and app is not None:
             try:
                 address = self.projects.next_free_individual_address_for_segment(pid, segment_id)
             except ValueError:

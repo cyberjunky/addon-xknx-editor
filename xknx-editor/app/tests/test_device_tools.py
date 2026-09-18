@@ -359,7 +359,8 @@ def test_a_product_without_an_application_can_be_added(client: TestClient) -> No
     editor.catalog.list_products = lambda: [*real(), Bare()]  # type: ignore[assignment]
     try:
         d = client.post("/api/devices", json={"product_ref_id": "P-BARE", "name": "Supply"}).json()
-        assert d["individual_address"] and d["resolved"] is False
+        # Not programmed, so no individual address is handed out (ETS leaves one out as well).
+        assert d["individual_address"] is None and d["resolved"] is False
         assert "no application program" in d["error"]
         assert client.get(f"/api/devices/{d['id']}/com-objects").status_code == 422
         assert any(x["id"] == d["id"] for x in client.get("/api/project/devices").json()["items"])

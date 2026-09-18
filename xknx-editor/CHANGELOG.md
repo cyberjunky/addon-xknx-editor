@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.13 (2026-09-18)
+
+- A device without an application program (a power supply, a plain coupler) is added without an
+  individual address: it is not programmed, and ETS leaves it without one too. Give an existing one
+  back its "-.-.-" with Unassign address.
+
 ## 0.3.12 (2026-09-18)
 
 - Open project lists the add-on's own projects folder, where every project is saved. The picker
