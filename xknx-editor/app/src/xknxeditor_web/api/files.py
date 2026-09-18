@@ -3,8 +3,9 @@
 Two roots exist, with different jobs. /share is the in/out tray: the folder every add-on sees and
 the user reaches over the network share, so it is the one place files are dropped and picked up,
 and the only root the picker offers. /config is the add-on's own storage (catalog, projects,
-documents, keys); paths under it stay valid for the API, because Open project and the internal
-routes refer to /config/projects/..., but it is not somewhere a person browses for a file.
+documents, keys); paths under it stay valid for the API, and its projects folder is offered as a
+root of its own, because that is where the editor keeps every project it opens - the rest of
+/config is not somewhere a person browses for a file.
 """
 
 from __future__ import annotations
@@ -27,8 +28,8 @@ def _roots(settings: Settings) -> list[tuple[str, Path]]:
 
 
 def _browse_roots(settings: Settings) -> list[tuple[str, Path]]:
-    """The roots the picker offers: /share alone (see the module docstring)."""
-    return [("share", settings.share_dir)]
+    """The roots the picker offers: the add-on's own projects folder and /share."""
+    return [("projects", settings.projects_dir), ("share", settings.share_dir)]
 
 
 def _resolve(settings: Settings, raw: str) -> tuple[str, Path]:
@@ -59,10 +60,14 @@ async def browse(request: Request) -> Any:
                 if root.is_dir()
             ],
         }
+    if raw in ("projects", "share"):  # a root by name, so the picker can open one straight away
+        raw = str(dict(_browse_roots(settings))[raw])
     label, path = _resolve(settings, raw)
     if not path.is_dir():
         raise NotFound(f"{raw} is not a folder")
-    root = dict(_roots(settings))[label].resolve()
+    # Inside the projects folder, that folder is the top: /config itself is not browsable.
+    browse_root = dict(_browse_roots(settings)).get("projects", settings.projects_dir).resolve()
+    root = browse_root if label == "config" else dict(_roots(settings))[label].resolve()
     entries: list[dict[str, Any]] = []
     try:
         children = sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))

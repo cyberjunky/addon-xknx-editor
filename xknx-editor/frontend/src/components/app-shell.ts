@@ -812,6 +812,7 @@ export class AppShell extends LitElement {
       <xknx-file-dialog
         label=${tr("Open project")}
         ext=".xknx"
+        start="projects"
         confirmLabel="Open"
         ?open=${this.dialog === "open"}
         @file-chosen=${chosen("open")}
@@ -820,6 +821,7 @@ export class AppShell extends LitElement {
       <xknx-file-dialog
         label=${tr("Import project from /share")}
         ext=".knxproj"
+        start="share"
         confirmLabel="Next"
         ?open=${this.dialog === "import-share"}
         @file-chosen=${chosen("import")}

@@ -1008,6 +1008,8 @@ export const VIEWS_NL: Record<string, string> = {
     "alle",
   "unknown type":
     "onbekend type",
+  "No rooms in the project yet; add them in the Buildings tab":
+    "Nog geen ruimtes in het project; voeg ze toe in het tabblad Gebouwen",
 };
 
 export const VIEWS_DE: Record<string, string> = {
@@ -2022,4 +2024,6 @@ export const VIEWS_DE: Record<string, string> = {
     "alle",
   "unknown type":
     "unbekannter Typ",
+  "No rooms in the project yet; add them in the Buildings tab":
+    "Noch keine Räume im Projekt; im Reiter Gebäude anlegen",
 };

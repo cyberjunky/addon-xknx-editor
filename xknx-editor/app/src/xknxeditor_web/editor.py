@@ -506,6 +506,13 @@ class Editor:
         row = self._row(device_id)
         app = self._resolve_app(row.hardware2program_ref_id)
         if app is None:
+            if self._product_without_application(row.product_ref_id):
+                raise ApiError(
+                    "This product has no application program (a power supply or a plain coupler, "
+                    "for instance): it carries no parameters and no group objects, and is in the "
+                    "project for the topology and the bus load.",
+                    422,
+                )
             raise ApiError(
                 f"Application for device {device_id} is not in the catalog "
                 f"(program {row.hardware2program_ref_id}); import its .knxprod first",
@@ -514,6 +521,15 @@ class Editor:
         view = DeviceView(device_id, app, row)
         self._views[device_id] = view
         return view
+
+    def _product_without_application(self, product_ref_id: str | None) -> bool:
+        """The catalog knows this product and it has no application program of its own."""
+        if not product_ref_id:
+            return False
+        return any(
+            p.product_ref_id == product_ref_id and p.application_id is None
+            for p in self.catalog.list_products()
+        )
 
     def _drop_views(self, *device_ids: int) -> None:
         if device_ids:
@@ -698,6 +714,7 @@ class Editor:
         from xknxeditor_web.reports import rtf_to_text
 
         data["comment_text"] = rtf_to_text(data.get("comment") or "")
+        data["installation_hints_text"] = rtf_to_text(data.get("installation_hints") or "")
         return data
 
     def parameters(self, device_id: int) -> dict[str, Any]:
@@ -838,8 +855,6 @@ class Editor:
         if product is None:
             raise NotFound(f"No catalog product {product_ref_id}")
         app = self._resolve_app(product.hardware2program_ref_id)
-        if app is None:
-            raise ApiError(f"Product {product_ref_id} has no importable application", 422)
         if segment_id is None:
             segment_id = self._default_segment()
         if address is None:
@@ -853,7 +868,9 @@ class Editor:
             module_instances: list[Any] = []
             com_objects: list[Any] = []
 
-        fresh = DeviceView(0, app, _Empty())
+        # A power supply, a coupler's hardware part and the like carry no application program:
+        # they are placed in the project for the topology and the bus load, without parameters.
+        fresh = DeviceView(0, app, _Empty()) if app is not None else None
         device_id = self.projects.add_device(
             pid,
             segment_id,
@@ -861,8 +878,8 @@ class Editor:
             address=address,
             name=name or product.name or "",
             hardware2program_ref_id=product.hardware2program_ref_id,
-            com_objects=fresh.default_com_object_refs(),
-            module_instances=fresh.module_instances(),
+            com_objects=fresh.default_com_object_refs() if fresh else None,
+            module_instances=fresh.module_instances() if fresh else None,
         )
         self._bump(structural=True, device=device_id)
         return self.device(device_id)

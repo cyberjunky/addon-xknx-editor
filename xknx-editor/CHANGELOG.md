@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.12 (2026-09-18)
+
+- Open project lists the add-on's own projects folder, where every project is saved. The picker
+  only offered /share, so the only way back into a project was the recent list.
+- A product without an application program (a power supply, a plain coupler) can be added to the
+  project again, for the topology and the bus load; opening its parameters says why it has none.
+- The device tab has a Room field; until now a device could only be put in a room by dragging it in
+  the Buildings dock or through the Device overview.
+- Installation hints written by ETS are shown as the text they carry, like comments, instead of raw
+  RTF; the CSV export follows.
+
 ## 0.3.11 (2026-09-17)
 
 - About shows the add-on's real version instead of 0.1.0: the Supervisor's build version is handed

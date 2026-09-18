@@ -30,6 +30,7 @@ type Device = {
   comment?: string;
   comment_text?: string;
   installation_hints?: string;
+  installation_hints_text?: string;
   serial_number?: string;
   last_download?: string | null;
   individual_address_loaded?: boolean;
@@ -42,6 +43,7 @@ type Device = {
   dali?: boolean;
   parameter_count?: number;
   com_object_count?: number;
+  space_id?: number | null;
 };
 
 type Overview = {
@@ -93,6 +95,11 @@ type Ping = {
 };
 
 type Serial = { address: string; serial_number: string | null; error: string | null };
+
+/** Text ETS wrote as RTF; the editor shows it as plain text and says so. */
+export function isRtf(text: string | null | undefined): boolean {
+  return !!text && text.trimStart().startsWith("{\\rtf");
+}
 
 /** A group address as text ("1/2/3", "1/515" or "2563") to its raw 16-bit value. */
 export function gaValue(text: string): number | null {
@@ -431,6 +438,9 @@ export class DevicePanel extends LitElement {
   /** Document id of the device's picture (an image tagged with its order number). */
   @state() private picture: string | null = null;
   private pictureFor = "";
+  /** The project's rooms, flattened for the Room select. */
+  @state() private spaces: { id: number; name: string }[] = [];
+  private spacesRev = -1;
   // Diagnostics: raw memory and property access.
   @state() private diagOutput: { label: string; hex: string }[] = [];
   private unsubscribeDpt = () => {};
@@ -540,6 +550,7 @@ export class DevicePanel extends LitElement {
     const token = ++this.syncToken;
     const id = this.deviceId;
     try {
+      void this.loadSpaces();
       const device = await api.get<Device>(`api/devices/${id}`);
       if (token !== this.syncToken) return;
       this.device = device;
@@ -558,6 +569,33 @@ export class DevicePanel extends LitElement {
     } catch (e) {
       if (token !== this.syncToken) return;
       store.say(e instanceof ApiError ? e.message : String(e), "danger");
+    }
+  }
+
+  /** The building tree as a flat list ("Home / Ground floor / Hall"), like the Device overview. */
+  private async loadSpaces(): Promise<void> {
+    if (this.spacesRev === store.revision) return;
+    this.spacesRev = store.revision;
+    try {
+      const flatten = (
+        nodes: { id: number; name: string; space_type: string; children: unknown[] }[],
+        prefix = "",
+      ): { id: number; name: string }[] =>
+        nodes.flatMap((s) => {
+          const label = `${prefix}${s.name || s.space_type}`;
+          return [
+            { id: s.id, name: label },
+            ...flatten(
+              s.children as { id: number; name: string; space_type: string; children: unknown[] }[],
+              `${label} / `,
+            ),
+          ];
+        });
+      this.spaces = flatten(
+        (await api.get<{ tree: { id: number; name: string; space_type: string; children: unknown[] }[] }>("api/spaces")).tree,
+      );
+    } catch {
+      this.spaces = [];
     }
   }
 
@@ -855,6 +893,22 @@ export class DevicePanel extends LitElement {
                 );
               }}
             ></sl-input>
+            <label>${tr("Room")}</label>
+            <sl-select
+              size="small"
+              hoist
+              value=${d.space_id ?? ""}
+              placeholder=${this.spaces.length ? tr("No room") : tr("No rooms in the project yet; add them in the Buildings tab")}
+              style="max-width:280px"
+              ?disabled=${!this.spaces.length}
+              @sl-change=${(e: Event) => {
+                const v = (e.target as HTMLSelectElement).value;
+                void this.act(() => api.patch(`api/devices/${d.id}`, { space_id: v === "" ? null : Number(v) }));
+              }}
+            >
+              <sl-option value="">${tr("No room")}</sl-option>
+              ${this.spaces.map((sp) => html`<sl-option value=${String(sp.id)}>${sp.name}</sl-option>`)}
+            </sl-select>
             <label>${tr("Download")}</label>
             <sl-select
               size="small"
@@ -1055,7 +1109,7 @@ export class DevicePanel extends LitElement {
                 rows="3"
                 resize="auto"
                 value=${d.comment_text ?? d.comment ?? ""}
-                help-text=${d.comment && d.comment.trimStart().startsWith("{\\rtf") ? tr("Formatted in ETS; saving an edit keeps the text and drops the formatting.") : ""}
+                help-text=${isRtf(d.comment) ? tr("Formatted in ETS; saving an edit keeps the text and drops the formatting.") : ""}
                 @sl-change=${(e: Event) => this.act(() => api.patch(`api/devices/${d.id}`, { comment: (e.target as HTMLTextAreaElement).value }))}
               ></sl-textarea>
               <label>${tr("Installation hints")}</label>
@@ -1063,7 +1117,8 @@ export class DevicePanel extends LitElement {
                 size="small"
                 rows="2"
                 resize="auto"
-                value=${d.installation_hints ?? ""}
+                value=${d.installation_hints_text ?? d.installation_hints ?? ""}
+                help-text=${isRtf(d.installation_hints) ? tr("Formatted in ETS; saving an edit keeps the text and drops the formatting.") : ""}
                 @sl-change=${(e: Event) => this.act(() => api.patch(`api/devices/${d.id}`, { installation_hints: (e.target as HTMLTextAreaElement).value }))}
               ></sl-textarea>
             </div>

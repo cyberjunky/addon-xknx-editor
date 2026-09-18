@@ -199,12 +199,20 @@ def _first_parameter(nodes: list[dict]) -> dict | None:
     return None
 
 
+BACKSLASH = chr(92)
+
+
 def test_device_and_group_address_texts_are_undoable(client: TestClient) -> None:
     did = _project_with_devices(client, 1)[0]
     client.patch(f"/api/devices/{did}", json={"description": "Hall", "comment": "Behind the door", "installation_hints": "Cabinet A, row 2"})
     d = client.get(f"/api/devices/{did}").json()
     assert (d["description"], d["comment"], d["comment_text"], d["installation_hints"]) == ("Hall", "Behind the door", "Behind the door", "Cabinet A, row 2")
-    client.post("/api/project/undo")
+    # ETS writes both as RTF; the editor shows the text they carry.
+    client.patch(f"/api/devices/{did}", json={"installation_hints": "{" + BACKSLASH + "rtf1 Cabinet A" + BACKSLASH + "par row 2}"})
+    assert client.get(f"/api/devices/{did}").json()["installation_hints_text"] == "Cabinet A\nrow 2"
+    client.post("/api/project/undo")  # the RTF edit
+    assert client.get(f"/api/devices/{did}").json()["installation_hints"] == "Cabinet A, row 2"
+    client.post("/api/project/undo")  # the first hints edit
     assert client.get(f"/api/devices/{did}").json()["installation_hints"] == ""
     assert client.patch(f"/api/devices/{did}", json={"description": None}).status_code == 200
 
@@ -329,3 +337,32 @@ def test_block_title_is_its_text_not_its_internal_name() -> None:
 
     assert node_dict(UiParameterBlock(id="b1", children=(), name="Grid"))["text"] == ""
     assert node_dict(UiParameterBlock(id="b2", children=(), name="Grid", text="Channel A"))["text"] == "Channel A"
+
+
+def test_a_product_without_an_application_can_be_added(client: TestClient) -> None:
+    """A power supply has no application program; ETS places it for the topology and bus load."""
+    wait_job(client, client.put("/api/catalog/upload", content=KNXPROD.read_bytes()).json())
+    client.post("/api/project/new", json={"name": "Supplies"})
+    editor = client.app.state.editor
+    product = client.get("/api/catalog/products").json()["items"][0]
+
+    class Bare:
+        product_ref_id = "P-BARE"
+        hardware2program_ref_id = None
+        application_id = None
+        name = "Power supply 640 mA"
+        order_number = "KNX-20E-640"
+        manufacturer_id = "M-0001"
+        manufacturer_name = "Test"
+
+    real = editor.catalog.list_products
+    editor.catalog.list_products = lambda: [*real(), Bare()]  # type: ignore[assignment]
+    try:
+        d = client.post("/api/devices", json={"product_ref_id": "P-BARE", "name": "Supply"}).json()
+        assert d["individual_address"] and d["resolved"] is False
+        assert "no application program" in d["error"]
+        assert client.get(f"/api/devices/{d['id']}/com-objects").status_code == 422
+        assert any(x["id"] == d["id"] for x in client.get("/api/project/devices").json()["items"])
+    finally:
+        editor.catalog.list_products = real  # type: ignore[assignment]
+    assert product["product_ref_id"]

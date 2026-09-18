@@ -579,7 +579,7 @@ export class CatalogView extends LitElement {
                       r.local
                         ? html`<sl-button
                             size="small"
-                            ?disabled=${!store.project.open || !r.local.application_id}
+                            ?disabled=${!store.project.open}
                             @click=${() => this.add(r.local!)}
                             >${icon("plus", 12)}
                             ${tr("Add to project")}</sl-button

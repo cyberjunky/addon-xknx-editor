@@ -113,6 +113,8 @@ export class FileDialog extends LitElement {
   @property() label = "Choose a file";
   /** Comma-separated extensions, e.g. ".knxproj,.xknx". Empty shows every file. */
   @property() ext = "";
+  /** Which root to open at ("projects" or "share"); empty lists the roots. */
+  @property() start = "";
   @property() confirmLabel = "Choose";
   @state() private listing: Listing | null = null;
   @state() private selected: Entry | null = null;
@@ -120,7 +122,8 @@ export class FileDialog extends LitElement {
   private lastDir = "";
 
   updated(changed: Map<string, unknown>): void {
-    if (changed.has("open") && this.open) void this.load(this.lastDir);
+    if (changed.has("open") && this.open)
+      void this.load(this.lastDir || this.start);
   }
 
   private async load(path: string): Promise<void> {

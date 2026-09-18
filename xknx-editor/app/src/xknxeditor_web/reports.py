@@ -395,7 +395,7 @@ def export_devices(ed: Editor) -> str:
             [
                 d["individual_address"], d["name"], d["room"], d["manufacturer_name"], d["product_name"],
                 d["order_number"], d["application_name"], d["serial_number"], d["description"],
-                rtf_to_text(getattr(info, "comment", "")), getattr(info, "installation_hints", ""),
+                rtf_to_text(getattr(info, "comment", "")), rtf_to_text(getattr(info, "installation_hints", "")),
                 "yes" if d["individual_address_loaded"] else "no", "yes" if d["application_loaded"] else "no",
                 "yes" if d["parameters_loaded"] else "no", "yes" if d["communication_part_loaded"] else "no",
                 d["last_download"] or "",

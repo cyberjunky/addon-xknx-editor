@@ -152,7 +152,7 @@ def test_file_browser(client: TestClient, dirs: tuple[Path, Path]) -> None:
     config, share = dirs
     (share / "sub").mkdir()
     root = client.get("/api/files/browse").json()
-    assert {e["name"] for e in root["entries"]} == {"share"}
+    assert {e["name"] for e in root["entries"]} == {"projects", "share"}
     listing = client.get("/api/files/browse", params={"path": str(share), "ext": ".knxprod"}).json()
     names = [e["name"] for e in listing["entries"]]
     assert names[0] == "sub" and listing["entries"][0]["is_dir"] is True
@@ -283,15 +283,21 @@ def test_dpt_table_uses_strings_xknx_accepts() -> None:
     assert x.group_address_dpt.get(GroupAddress(5)) is not None and x.group_address_dpt.get(GroupAddress(6)) is None
 
 
-def test_picker_offers_share_only_but_config_paths_still_resolve(client: TestClient, dirs: tuple[Path, Path]) -> None:
-    """/share is the one root to browse; /config stays a valid path for the API, since Open project
-    and the internal routes refer to /config/projects/... - it just is not offered for browsing."""
+def test_picker_offers_the_projects_folder_and_share(client: TestClient, dirs: tuple[Path, Path]) -> None:
+    """Projects live in the add-on's own /config/projects, so the picker offers that folder next to
+    /share; the rest of /config stays a valid path for the API without being browsable."""
     config, share = dirs
+    projects = config / "projects"
+    client.post("/api/project/new", json={"name": "Picked"})
     top = client.get("/api/files/browse").json()
-    assert [r["name"] for r in top["roots"]] == ["share"]
-    assert [e["name"] for e in top["entries"]] == ["share"]
+    assert [r["name"] for r in top["roots"]] == ["projects", "share"]
+    assert [e["name"] for e in top["entries"]] == ["projects", "share"]
+    # A root can be opened by name, and the project just created is in it.
+    listing = client.get("/api/files/browse", params={"path": "projects", "ext": ".xknx"}).json()
+    assert listing["path"] == str(projects) and listing["parent"] is None
+    assert [e["name"] for e in listing["entries"]] == ["Picked.xknx"]
     inside = client.get("/api/files/browse", params={"path": str(share)}).json()
-    assert [r["name"] for r in inside["roots"]] == ["share"]
+    assert [r["name"] for r in inside["roots"]] == ["projects", "share"]
     # An explicit /config path is still resolvable, it is just not browsed to from the top.
     assert client.get("/api/files/browse", params={"path": str(config)}).status_code == 200
     assert client.get("/api/files/browse", params={"path": "/etc"}).status_code == 400
