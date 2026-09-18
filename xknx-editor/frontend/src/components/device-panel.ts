@@ -569,6 +569,15 @@ export class DevicePanel extends LitElement {
       }
     } catch (e) {
       if (token !== this.syncToken) return;
+      // The device is gone (removed here or elsewhere): drop the selection instead of reporting
+      // the 404 the refetch ran into.
+      if (e instanceof ApiError && e.status === 404) {
+        this.device = null;
+        this.tree = [];
+        this.comObjects = [];
+        if (store.selectedDevice === id) store.select(null);
+        return;
+      }
       store.say(e instanceof ApiError ? e.message : String(e), "danger");
     }
   }

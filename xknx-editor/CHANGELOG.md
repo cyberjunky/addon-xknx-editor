@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.16 (2026-09-18)
+
+- Removing a device no longer reports "No device with id 22": the editor refetched the device it
+  had just deleted and showed the 404. The selection is dropped instead.
+
 ## 0.3.15 (2026-09-18)
 
 - The MCP server reports the add-on's version in `serverInfo` instead of the MCP SDK's ("1.28.1"),

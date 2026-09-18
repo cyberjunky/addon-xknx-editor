@@ -162,7 +162,8 @@ export class DeviceConnections extends LitElement {
       );
     } catch (e) {
       this.data = null;
-      if (!(e instanceof ApiError && e.status === 422))
+      // 422: no product data for this device; 404: it has just been removed.
+      if (!(e instanceof ApiError && (e.status === 422 || e.status === 404)))
         store.say(e instanceof ApiError ? e.message : String(e), "danger");
     }
   }
