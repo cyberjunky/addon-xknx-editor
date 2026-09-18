@@ -10,7 +10,7 @@
 # the /addons share is stamped `dev-<git sha>` by tools/deploy-local.ps1 instead, so the
 # Supervisor notices each redeploy of a local build.
 name: XKNX Editor
-version: 0.3.16
+version: 0.3.17
 slug: xknx_editor
 description: Web-based KNX project editor built on xknx. Experimental.
 url: https://github.com/cyberjunky/addon-xknx-editor

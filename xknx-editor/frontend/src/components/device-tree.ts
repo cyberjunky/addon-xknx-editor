@@ -127,6 +127,22 @@ export class DeviceTree extends LitElement {
     void store.pictures().then((m) => (this.pictures = m));
   }
 
+  /** The device rows of a line or one of its segments. */
+  private deviceRows(devices: DeviceSummary[]) {
+    return devices.map(
+      (d) => html`<div
+        class="node device ${d.resolved ? "" : "unresolved"} ${store.selectedDevice === d.id ? "selected" : ""}"
+        @click=${() => store.select(d.id)}
+      >
+        ${this.thumb(d.order_number)}<span class="addr"
+          >${deviceAddress(d.individual_address, d.line)}</span
+        ><span class="name" title=${d.product_name}
+          >${d.name || d.product_name}</span
+        >
+      </div>`,
+    );
+  }
+
   /** A device's picture as a thumbnail, or the chip icon. */
   private thumb(orderNumber: string) {
     const id = this.pictures[pictureKey(orderNumber)];
@@ -284,21 +300,28 @@ export class DeviceTree extends LitElement {
                                 this.collapsed.has(lk)
                                   ? nothing
                                   : html`<div class="children">
-                                      ${devices.map(
-                                        (d) =>
-                                          html`<div
-                                            class="node device ${d.resolved ? "" : "unresolved"} ${store.selectedDevice === d.id ? "selected" : ""}"
-                                            @click=${() => store.select(d.id)}
-                                          >
-                                            ${this.thumb(d.order_number)}<span class="addr"
-                                              >${deviceAddress(d.individual_address, d.line)}</span
-                                            ><span
-                                              class="name"
-                                              title=${d.product_name}
-                                              >${d.name || d.product_name}</span
-                                            >
-                                          </div>`,
-                                      )}
+                                      ${
+                                        l.segments.length > 1
+                                          ? l.segments.map((sg) => {
+                                              // A line repeater splits a line into segments; ETS
+                                              // shows them as their own level, so show them too.
+                                              const rows = sg.devices.filter((d) => this.matchesFilter(d));
+                                              const sk = `s${sg.id}`;
+                                              return html`<div
+                                                  class="node"
+                                                  @click=${() => this.toggle(sk)}
+                                                >
+                                                  ${icon(this.collapsed.has(sk) ? "right" : "down", 14)}<span
+                                                    class="addr"
+                                                    >${a.address}.${l.address}</span
+                                                  ><span class="name"
+                                                    >${sg.name || `${tr("Segment")} ${sg.number}`}</span
+                                                  ><span class="muted">${rows.length}</span>
+                                                </div>
+                                                ${this.collapsed.has(sk) ? nothing : html`<div class="children">${this.deviceRows(rows)}</div>`}`;
+                                            })
+                                          : this.deviceRows(devices)
+                                      }
                                     </div>`
                               }
                             `;

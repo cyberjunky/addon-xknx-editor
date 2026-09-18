@@ -763,6 +763,7 @@ class _Writer:
                             "Segment",
                             Id=f"{pid}-0_S-{s_seq}",
                             Number=segment.number,
+                            Name=segment.name or None,
                             MediumTypeRefId=segment.medium_type,
                             Puid=self._next_puid(),
                         )

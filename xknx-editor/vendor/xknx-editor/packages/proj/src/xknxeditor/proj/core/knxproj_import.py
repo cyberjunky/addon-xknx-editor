@@ -143,6 +143,22 @@ class _BinaryEntry:
 
 
 @dataclass(frozen=True, slots=True)
+class _SegmentEntry:
+    """A ``Line/Segment`` from the raw project XML, with the devices that sit on it.
+
+    A line repeater splits a TP line into segments; ETS writes one ``<Segment>`` per part and puts
+    each ``<DeviceInstance>`` inside the one it belongs to. xknxproject reads only the first
+    segment's medium type and then lists every device of the line, so the split has to be read
+    here or it is lost.
+    """
+
+    number: int
+    medium_type: str
+    name: str
+    device_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class _TraceEntry:
     """A ``ProjectInformation/ProjectTraces/ProjectTrace`` entry, captured verbatim.
 
@@ -180,6 +196,8 @@ class _RawExtras:
         self.traces: list[_TraceEntry] = []
         # DeviceInstance @Id -> (Comment, InstallationHints); xknxproject keeps neither.
         self.device_texts: dict[str, tuple[str, str]] = {}
+        # (area address, line address) -> its segments, in document order.
+        self.segments: dict[tuple[int, int], list[_SegmentEntry]] = {}
 
 
 def _parse(
@@ -196,6 +214,7 @@ def _parse(
         # archive is still open.
         extras = _read_device_extras(contents)
         extras.traces = _read_project_traces(contents)
+        extras.segments = _read_segments(contents)
     logger.debug(
         "parsed knxproj '%s': %d devices, %d group addresses, %d w/ binary data, %d w/ modules, %d traces",
         parser.project_info.name,
@@ -239,6 +258,52 @@ def _read_device_extras(contents: _ProjectContents) -> _RawExtras:
         if comment or hints:
             extras.device_texts[device_id] = (comment, hints)
     return extras
+
+
+def _read_segments(contents: _ProjectContents) -> dict[tuple[int, int], list[_SegmentEntry]]:
+    """Every line's ``<Segment>`` elements with the devices on them, from the raw ``0.xml``.
+
+    Best-effort: without segments (ETS 5 and older write the devices straight under the line) the
+    result is empty and the importer falls back to one segment per line.
+    """
+    try:
+        with contents.open_project_0() as handle:
+            root = ET.parse(handle).getroot()
+    except Exception as e:  # noqa: BLE001 - optional, like the other raw extras
+        logger.debug("could not read raw 0.xml for segments: %s", e)
+        return {}
+    found: dict[tuple[int, int], list[_SegmentEntry]] = {}
+    for area in root.iter():
+        if _localname(area.tag) != "Area":
+            continue
+        area_address = _int(area.get("Address"))
+        for line in area:
+            if _localname(line.tag) != "Line":
+                continue
+            entries = [
+                _SegmentEntry(
+                    number=_int(segment.get("Number")),
+                    medium_type=segment.get("MediumTypeRefId") or "",
+                    name=segment.get("Name") or "",
+                    device_ids=tuple(
+                        device.get("Id") or ""
+                        for device in segment
+                        if _localname(device.tag) == "DeviceInstance" and device.get("Id")
+                    ),
+                )
+                for segment in line
+                if _localname(segment.tag) == "Segment"
+            ]
+            if entries:
+                found[(area_address, _int(line.get("Address")))] = entries
+    return found
+
+
+def _int(value: str | None) -> int:
+    try:
+        return int(value or 0)
+    except ValueError:
+        return 0
 
 
 def _read_project_traces(contents: _ProjectContents) -> list[_TraceEntry]:
@@ -418,10 +483,26 @@ def _build_topology(
                 ),
             )
             area.lines.append(line)
-            segment = Segment(number=0, medium_type=xline.medium_type)
-            line.segments.append(segment)
+            raw_segments = state.extras.segments.get((xarea.address, xline.address), [])
+            segments = [
+                Segment(
+                    number=entry.number,
+                    medium_type=entry.medium_type or xline.medium_type,
+                    name=entry.name,
+                )
+                for entry in raw_segments
+            ] or [Segment(number=0, medium_type=xline.medium_type)]
+            line.segments.extend(segments)
+            # A line repeater gives the line a second segment; put every device on the one ETS
+            # wrote it in, and anything unplaced on the first.
+            by_device = {
+                device_id: segments[i]
+                for i, entry in enumerate(raw_segments)
+                for device_id in entry.device_ids
+            }
             for xdevice in xline.devices:
                 try:
+                    segment = by_device.get(xdevice.identifier, segments[0])
                     segment.devices.append(_build_device(xdevice, state))
                 except Exception as e:
                     # Partial load: a single malformed device must not abort the whole import.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.17 (2026-09-18)
+
+- A line repeater's second segment survives the import: every device lands on the segment ETS put it
+  on ("TP buiten segment"), and the topology tree shows the segments of a line that has more than
+  one. The importer reads them from the raw project XML, since xknxproject flattens them.
+
 ## 0.3.16 (2026-09-18)
 
 - Removing a device no longer reports "No device with id 22": the editor refetched the device it
