@@ -138,6 +138,41 @@ Programming and monitor writes act on the real bus and cannot be undone; project
 undoable. Treat the token like a password: anyone who reaches the port with it can program the
 installation.
 
+### What it is good for
+
+The assistant sees the same project you have open, so you can ask in words for the things that are
+tedious by hand. Everything below is a real exchange, and every project edit lands in the undo
+history, so `project_undo` (or Ctrl+Z in the UI) takes it back.
+
+**Get a device's unused functions working.** _"What can you find about the weather station, what do
+I need to configure to make full use of it?"_ — it reads the whole parameter tree, reports what is
+switched off, and, on your go-ahead, sets sane values and wires the objects up: here it enabled the
+brightness limit value (sunshine at 40 kLux, 2 min on-delay, 15 min off-delay), the temperature
+limit value as a frost alarm at +3 °C clearing at +5 °C, made Darkness and Frost alarm send
+cyclically as well as on change, took the twilight threshold off a communication object that was on
+no address, created `4/3/1 Buiten zonneschijn` and linked the two new objects to it and to the
+`0/1/10 Buiten vorst alarm` that was already waiting empty.
+
+**Fill in the datapoint types.** _"Which group addresses have no DPT, and what should they be?"_ —
+an address without a type cannot be decoded in the monitor, charted, or read by Home Assistant. The
+assistant proposes one per address from the objects linked to it (9.001 for a temperature, 9.004 for
+lux, 9.005 for wind speed, 1.005 for an alarm) and sets them.
+
+**Check the installation against the bus.** _"Which devices do not answer?"_ — it pings every device
+and lists the silent ones; _"does 1.1.5 still hold what the project says?"_ reads the device back and
+compares it with what a download would write, without writing anything.
+
+**Find things in a large project.** _"Where does 4/3/2 go?"_, _"which objects are on no address?"_,
+_"what changed since the last download?"_, _"what was on the bus at three in the morning?"_ (the
+recorded archive, with filters and statistics).
+
+**Tidy up.** Renaming a batch of group addresses, copying a device with its parameters, shifting
+individual addresses, exporting a table as CSV, or producing a `.knxproj` again.
+
+Two rules the server itself enforces: the assistant cannot program a device without the bus being
+connected, and it tells you which of its tools touch the real installation. Ask it to read first and
+propose, then let it apply.
+
 ## Repository layout
 
 ```

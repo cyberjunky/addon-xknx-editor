@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.19 (2026-09-18)
+
+- The README shows what an LLM client can do over MCP, with worked examples (getting a device's
+  unused functions working, filling in datapoint types, checking the installation against the bus).
+
 ## 0.3.18 (2026-09-18)
 
 - A device whose product has no application program (a power supply) is no longer shown in the
