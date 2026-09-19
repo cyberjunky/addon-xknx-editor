@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.3 (2026-09-19)
+
+- Group objects a device has switched on but that the project never gave a row are listed above the
+  Group objects table, with a button that adds them so they can be linked. An imported device only
+  carries what ETS instantiated, and until now those objects stayed out of reach for good - the
+  reconcile on a parameter edit only adds what that edit itself switches on.
+- A product without an application program (a power supply) is no longer counted among the products
+  whose data is missing, in the catalog's list or in the topology: nothing is missing.
+
 ## 0.4.2 (2026-09-19)
 
 - The README's MCP examples gained one more: having a device's configuration reviewed (the case that

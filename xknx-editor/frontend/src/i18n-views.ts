@@ -1028,6 +1028,12 @@ export const VIEWS_NL: Record<string, string> = {
     "apparaat/apparaten hadden IP-instellingen.",
   "This product has no application program (a power supply or a plain coupler, for instance): it carries no parameters and no group objects, and is in the project for the topology and the bus load.":
     "Dit product heeft geen applicatieprogramma (bijvoorbeeld een voeding of een eenvoudige koppelaar): het heeft geen parameters en geen groepsobjecten en staat in het project voor de topologie en de buslast.",
+  "Add them":
+    "Toevoegen",
+  "group object(s) added":
+    "groepsobject(en) toegevoegd",
+  "group object(s) of this device are switched on but have no place in the project yet, so they cannot be linked:":
+    "groepsobject(en) van dit apparaat staan aan maar hebben nog geen plek in het project, dus ze zijn niet te koppelen:",
 };
 
 export const VIEWS_DE: Record<string, string> = {
@@ -2062,4 +2068,10 @@ export const VIEWS_DE: Record<string, string> = {
     "Gerät(e) hatten IP-Einstellungen.",
   "This product has no application program (a power supply or a plain coupler, for instance): it carries no parameters and no group objects, and is in the project for the topology and the bus load.":
     "Dieses Produkt hat kein Applikationsprogramm (etwa ein Netzteil oder ein einfacher Koppler): es hat keine Parameter und keine Gruppenobjekte und steht für Topologie und Buslast im Projekt.",
+  "Add them":
+    "Hinzufügen",
+  "group object(s) added":
+    "Gruppenobjekt(e) hinzugefügt",
+  "group object(s) of this device are switched on but have no place in the project yet, so they cannot be linked:":
+    "Gruppenobjekt(e) dieses Geräts sind eingeschaltet, haben aber noch keinen Platz im Projekt und lassen sich daher nicht verknüpfen:",
 };

@@ -174,14 +174,17 @@ class DeviceView:
         else:
             self._row_ids[ref_id] = db_id
 
-    def com_objects(self) -> list[ComObjectView]:
+    def com_objects(self, only_instantiated: bool = True) -> list[ComObjectView]:
         """Visible com-objects for the current parameter values.
 
         An imported device carries the exact set it instantiated; restrict to that so channel-mode
         products do not show per-channel objects the raw defaults would activate. A device built
-        from scratch has no instances and keeps the full parameter-driven set."""
+        from scratch has no instances and keeps the full parameter-driven set.
+
+        ``only_instantiated=False`` gives the whole parameter-driven set instead, including the
+        objects the project has no row for - what "add the missing objects" offers to create."""
         ui_cos = collect_com_objects(self.ui_tree())
-        instantiated = self.instantiated_ref_ids()
+        instantiated = self.instantiated_ref_ids() if only_instantiated else set()
         if instantiated:
             ui_cos = [co for co in ui_cos if co.ref_id in instantiated]
         return [

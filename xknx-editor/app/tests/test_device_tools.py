@@ -364,6 +364,9 @@ def test_a_product_without_an_application_can_be_added(client: TestClient) -> No
         assert "no application program" in d["error"]
         # Nothing is missing here, so the UI does not flag it like absent product data.
         assert d["no_application"] is True
+        # Nothing to fetch: it is not product data that is missing, the product has no application.
+        assert "P-BARE" not in str(client.get("/api/catalog/missing").json())
+        assert client.get("/api/project/topology").json()["unresolved"] == []
         summary = next(x for x in client.get("/api/project/devices").json()["items"] if x["id"] == d["id"])
         assert summary["no_application"] is True and summary["resolved"] is False
         assert client.get(f"/api/devices/{d['id']}/com-objects").status_code == 422
@@ -408,3 +411,41 @@ def test_import_notes_read_from_the_project(tmp_path: Path) -> None:
     ]
     editor.pid = None
     assert editor.import_notes() == []
+
+
+def test_missing_group_objects_can_be_added(client: TestClient) -> None:
+    """An object that a parameter already had switched on when the project was written has no row,
+    so it cannot be linked; the reconcile on a later edit only adds what that edit activates."""
+    did = _project_with_devices(client, 1)[0]
+    editor = client.app.state.editor
+    before = client.get(f"/api/devices/{did}/com-objects").json()
+    assert before["missing"] == []  # a device added here starts complete
+
+    # Drop a row the way an import can leave one out, then let the editor put it back.
+    dropped = before["items"][0]
+
+    def remove() -> None:
+        row = next(c for c in editor._row(did).com_objects if c.id == dropped["db_id"])  # noqa: SLF001
+        editor.projects.sync_device_com_objects(
+            editor._pid(),  # noqa: SLF001
+            did,
+            [(c.ref_id, None) for c in editor._row(did).com_objects if c.id != row.id],  # noqa: SLF001
+        )
+        editor._drop_views(did)  # noqa: SLF001
+
+    editor.worker.run_blocking(remove)
+    after = client.get(f"/api/devices/{did}/com-objects").json()
+    assert [o["number"] for o in after["missing"]] == [dropped["number"]]
+    # The objects table only lists rows the project has, which is why the button is needed.
+    assert all(o["number"] != dropped["number"] for o in after["items"])
+
+    added = client.post(f"/api/devices/{did}/com-objects/add-missing", json={}).json()
+    assert added["added"] == 1
+    back = client.get(f"/api/devices/{did}/com-objects").json()
+    assert back["missing"] == []
+    restored = next(o for o in back["items"] if o["number"] == dropped["number"])
+    assert restored["db_id"] is not None
+    # Adding only adds: the device keeps every object it already had.
+    assert len(back["items"]) == len(before["items"])
+    client.post("/api/project/undo")
+    assert client.get(f"/api/devices/{did}/com-objects").json()["missing"] != []

@@ -73,7 +73,15 @@ async def set_parameter(request: Request) -> Any:
 
 async def com_objects(request: Request) -> Any:
     ed = _ed(request)
-    return await ed.worker.run(ed.com_objects, _id(request))
+    items = await ed.worker.run(ed.com_objects, _id(request))
+    items["missing"] = await ed.worker.run(ed.missing_com_objects, _id(request))
+    return items
+
+
+async def add_missing_com_objects(request: Request) -> Any:
+    """Give the device's active group objects a row each, so they can be linked."""
+    ed = _ed(request)
+    return await ed.worker.run(ed.add_missing_com_objects, _id(request))
 
 
 async def set_flag(request: Request) -> Any:
@@ -566,6 +574,7 @@ def routes() -> list[Route]:
         route("/api/devices/{id:int}/parameters", parameters),
         route("/api/devices/{id:int}/parameter", set_parameter, ["POST"]),
         route("/api/devices/{id:int}/com-objects", com_objects),
+        route("/api/devices/{id:int}/com-objects/add-missing", add_missing_com_objects, ["POST"]),
         route("/api/devices/{id:int}/com-objects/flag", set_flag, ["POST"]),
         route("/api/devices/{id:int}/com-objects/link", link, ["POST"]),
         route("/api/links/{link_id:int}", unlink, ["DELETE"]),

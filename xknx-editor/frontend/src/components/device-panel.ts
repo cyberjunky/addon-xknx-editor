@@ -403,6 +403,8 @@ export class DevicePanel extends LitElement {
   @state() private device: Device | null = null;
   @state() private tree: UiNode[] = [];
   @state() private comObjects: ComObject[] = [];
+  /** Active group objects the project has no row for; they cannot be linked until it has. */
+  @state() private missingObjects: { ref_id: string; number: number; name: string }[] = [];
   @state() private gas: GroupAddress[] = [];
   @state() private linkFor: ComObject | null = null;
   // The link dialog: what was typed, and which address is picked (null while nothing is chosen).
@@ -560,11 +562,14 @@ export class DevicePanel extends LitElement {
       if (device.resolved) {
         const [p, c] = await Promise.all([
           api.get<{ tree: UiNode[] }>(`api/devices/${id}/parameters`),
-          api.get<{ items: ComObject[] }>(`api/devices/${id}/com-objects`),
+          api.get<{ items: ComObject[]; missing: { ref_id: string; number: number; name: string }[] }>(
+            `api/devices/${id}/com-objects`,
+          ),
         ]);
         if (token !== this.syncToken) return;
         this.tree = p.tree;
         this.comObjects = c.items;
+        this.missingObjects = c.missing ?? [];
       } else {
         this.tree = [];
         this.comObjects = [];
@@ -1533,6 +1538,35 @@ ${this.hexDiff(s.current, s.planned, s.address)}</pre>`,
     return lines;
   }
 
+  private renderMissingObjects() {
+    const missing = this.missingObjects;
+    if (!missing.length) return nothing;
+    return html`<div class="row">
+      <span class="muted"
+        >${missing.length}
+        ${tr("group object(s) of this device are switched on but have no place in the project yet, so they cannot be linked:")}
+        ${missing
+          .slice(0, 6)
+          .map((o) => `#${o.number} ${o.name}`)
+          .join(", ")}${missing.length > 6 ? ", …" : ""}</span
+      >
+      <sl-button
+        size="small"
+        ?loading=${this.busy === "add-objects"}
+        @click=${() =>
+          this.busAction("add-objects", async () => {
+            const r = await api.post<{ added: number }>(
+              `api/devices/${this.deviceId}/com-objects/add-missing`,
+              {},
+            );
+            store.say(`${r.added} ${tr("group object(s) added")}`, "success");
+            await this.sync(true);
+          })}
+        >${tr("Add them")}</sl-button
+      >
+    </div>`;
+  }
+
   private renderObjects() {
     const flag = (co: ComObject, key: string, letter: string, title: string) =>
       html`<button
@@ -1543,7 +1577,8 @@ ${this.hexDiff(s.current, s.planned, s.address)}</pre>`,
       >
         ${co.flags[key] ? letter : "–"}
       </button>`;
-    return html`<div style="overflow-x:auto">
+    return html`${this.renderMissingObjects()}
+    <div style="overflow-x:auto">
       <table class="objects">
         <tr>
           <th>${tr("Number")}</th>

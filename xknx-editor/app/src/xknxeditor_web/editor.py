@@ -607,12 +607,15 @@ class Editor:
                 }
                 for a in inst.areas
             ],
+            # A power supply or a plain coupler carries no application program: nothing is
+            # missing, so it does not belong in the list of products to fetch.
             "unresolved": sorted(
                 {
                     d.hardware2program_ref_id
                     for d in self.projects.devices(pid)
                     if d.hardware2program_ref_id
                     and self._resolve_app(d.hardware2program_ref_id) is None
+                    and not self._product_without_application(d.product_ref_id)
                 }
             ),
         }
@@ -821,6 +824,38 @@ class Editor:
             changed = True
         self._bump(structural=changed, device=device_id)
         return {"device_id": device_id, "ref_id": ref_id, "value": value, "com_objects_changed": changed}
+
+    def missing_com_objects(self, device_id: int) -> list[dict[str, Any]]:
+        """The device's active group objects that have no row in the project, so cannot be linked.
+
+        An imported device carries the objects ETS instantiated. A parameter that was already on
+        when the project was written leaves its objects active but uninstantiated, and the
+        reconcile on a parameter edit only adds what that edit activates - so they would stay
+        unlinkable for good."""
+        view = self.view(device_id)
+        current = {qualified_ref(co, view.app_program_id) for co in self._row(device_id).com_objects}
+        return [
+            {"ref_id": co.ref_id, "number": co.number, "name": co.name, "function_text": co.function_text}
+            for co in view.com_objects(only_instantiated=False)
+            if co.db_id is None and co.ref_id not in current
+        ]
+
+    def add_missing_com_objects(self, device_id: int) -> dict[str, Any]:
+        """Give every active group object of the device a row, so it can be linked. Adds only:
+        nothing the device already carries is touched or removed. Undoable."""
+        pid = self._pid()
+        view = self.view(device_id)
+        missing = [co["ref_id"] for co in self.missing_com_objects(device_id)]
+        if not missing:
+            return {"device_id": device_id, "added": 0, "objects": []}
+        current = {qualified_ref(co, view.app_program_id) for co in self._row(device_id).com_objects}
+        target = sorted(current | set(missing))
+        self.projects.sync_device_com_objects(
+            pid, device_id, [(ref, None) for ref in target], app_program_id=view.app_program_id
+        )
+        self._drop_views(device_id)
+        self._bump(structural=True, device=device_id)
+        return {"device_id": device_id, "added": len(missing), "objects": missing}
 
     def set_flag(self, device_id: int, ref_id: str, flag: str, value: bool | None) -> dict[str, Any]:
         pid = self._pid()
@@ -1595,7 +1630,13 @@ class Editor:
         missing: list[str] = []
         for row in self.projects.devices(self.pid):
             ref = row.hardware2program_ref_id
-            if ref and ref not in missing and self._resolve_app(ref) is None:
+            if (
+                ref
+                and ref not in missing
+                and self._resolve_app(ref) is None
+                # A product with no application program of its own is complete as it is.
+                and not self._product_without_application(row.product_ref_id)
+            ):
                 missing.append(ref)
         return missing
 
