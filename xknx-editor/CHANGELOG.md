@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.0 (2026-09-19)
+
+- The vendored editor packages are upstream v0.1.5. A project keeps far more of itself through an
+  import and export: line and area couplers, the IP settings of IP interfaces and routers,
+  devices not yet on a line, the group-object tree, and custom names and descriptions on group
+  objects. The exported file is checked against the schema, undo no longer breaks on a device's
+  binary data (the MDT DALI backup), and the MyKnx project hash is the signature itself rather
+  than a guess at its digest.
+- Devices with repeated channel modules - MDT push buttons above all - show all their group
+  objects again. A com-object is matched by its qualified per-instance ref; the stored ref has the
+  module instance stripped, so every channel collapsed onto one object, rows went missing and a
+  reconcile could delete and recreate them with their links (upstream issue #17).
+- Eleven of the thirteen local patches are gone: upstream carries them now. A new project is
+  seeded with a building named after it, as upstream does.
+
 ## 0.3.19 (2026-09-18)
 
 - The README shows what an LLM client can do over MCP, with worked examples (getting a device's
