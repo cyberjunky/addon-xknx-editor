@@ -1010,6 +1010,24 @@ export const VIEWS_NL: Record<string, string> = {
     "onbekend type",
   "No rooms in the project yet; add them in the Buildings tab":
     "Nog geen ruimtes in het project; voeg ze toe in het tabblad Gebouwen",
+  "Kept back on import":
+    "Niet meegekomen bij importeren",
+  "The file holds":
+    "Het bestand bevat",
+  "installations; only the first one is in this project, and only that one is exported.":
+    "installaties; alleen de eerste zit in dit project en alleen die wordt geëxporteerd.",
+  "line(s) have more than one segment (a line repeater). They are imported, but check the segments after a round trip.":
+    "lijn(en) hebben meer dan één segment (een lijnversterker). Ze worden geïmporteerd, maar controleer de segmenten na een heen-en-terugweg.",
+  "line(s) had an address another line already used and were dropped on import.":
+    "lijn(en) hadden een adres dat een andere lijn al gebruikte en zijn bij het importeren weggelaten.",
+  "device(s) were not on a line.":
+    "apparaat/apparaten stonden niet op een lijn.",
+  "group object(s) carried a name or description of their own.":
+    "groepsobject(en) hadden een eigen naam of beschrijving.",
+  "device(s) carried IP settings.":
+    "apparaat/apparaten hadden IP-instellingen.",
+  "This product has no application program (a power supply or a plain coupler, for instance): it carries no parameters and no group objects, and is in the project for the topology and the bus load.":
+    "Dit product heeft geen applicatieprogramma (bijvoorbeeld een voeding of een eenvoudige koppelaar): het heeft geen parameters en geen groepsobjecten en staat in het project voor de topologie en de buslast.",
 };
 
 export const VIEWS_DE: Record<string, string> = {
@@ -2026,4 +2044,22 @@ export const VIEWS_DE: Record<string, string> = {
     "unbekannter Typ",
   "No rooms in the project yet; add them in the Buildings tab":
     "Noch keine Räume im Projekt; im Reiter Gebäude anlegen",
+  "Kept back on import":
+    "Beim Import nicht übernommen",
+  "The file holds":
+    "Die Datei enthält",
+  "installations; only the first one is in this project, and only that one is exported.":
+    "Installationen; nur die erste steht in diesem Projekt und nur sie wird exportiert.",
+  "line(s) have more than one segment (a line repeater). They are imported, but check the segments after a round trip.":
+    "Linie(n) haben mehr als ein Segment (ein Linienverstärker). Sie werden importiert, prüfen Sie die Segmente aber nach einem Hin und Zurück.",
+  "line(s) had an address another line already used and were dropped on import.":
+    "Linie(n) hatten eine Adresse, die eine andere Linie schon benutzte, und wurden beim Import weggelassen.",
+  "device(s) were not on a line.":
+    "Gerät(e) lagen auf keiner Linie.",
+  "group object(s) carried a name or description of their own.":
+    "Gruppenobjekt(e) hatten einen eigenen Namen oder eine eigene Beschreibung.",
+  "device(s) carried IP settings.":
+    "Gerät(e) hatten IP-Einstellungen.",
+  "This product has no application program (a power supply or a plain coupler, for instance): it carries no parameters and no group objects, and is in the project for the topology and the bus load.":
+    "Dieses Produkt hat kein Applikationsprogramm (etwa ein Netzteil oder ein einfacher Koppler): es hat keine Parameter und keine Gruppenobjekte und steht für Topologie und Buslast im Projekt.",
 };

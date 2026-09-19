@@ -130,6 +130,18 @@ class Editor:
         self._bump(structural=True, project=self.pid)
         return self.info()
 
+    def import_notes(self) -> list[dict[str, Any]]:
+        """What the imported .knxproj carried that the project store cannot fully represent.
+
+        Recorded at import and kept on the project, so an export can remind the user what a round
+        trip already merged or dropped. Empty for a project that imported losslessly."""
+        from xknxeditor.proj.core.import_notes import loads
+
+        if self.pid is None:
+            return []
+        raw = getattr(self.projects.project(self.pid), "import_notes", "")
+        return [{"code": n.code, "count": n.count, "detail": n.detail} for n in loads(raw)]
+
     def _saved_at(self) -> str | None:
         """When the project file was last written (every edit commits at once)."""
         import datetime as _dt
@@ -266,6 +278,11 @@ class Editor:
             "skipped_refs": sorted(bundle.skipped_refs),
             "unverifiable_folders": list(result.unverifiable_folders),
             "missing_references": sorted(getattr(result, "missing_references", []) or []),
+            # What the project already lost on import: the exported file cannot carry it back.
+            "import_notes": [
+                {"code": n.code, "count": n.count, "detail": n.detail}
+                for n in getattr(result, "import_notes", [])
+            ],
         }
         log.info("exported %s (schema %s, %d manufacturers, %d bytes)", dest, result.schema, len(bundle.resolved_manufacturers), out["bytes"])
         return out
@@ -408,6 +425,7 @@ class Editor:
                 {"index": i.index, "name": i.name} for i in self.projects.installations(pid)
             ],
             "device_count": len(self.projects.devices(pid)),
+            "import_notes": self.import_notes(),
             "can_undo": self.projects.can_undo(pid),
             "can_redo": self.projects.can_redo(pid),
             "revision": self.worker.revision,

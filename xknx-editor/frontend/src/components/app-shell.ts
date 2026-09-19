@@ -17,6 +17,7 @@ import {
   t as tr,
 } from "../i18n.js";
 import { DPT_STYLES, dptStyle, setDptStyle, type DptStyle } from "../dpt-format.js";
+import { importNoteText, type ImportNote } from "../import-notes.js";
 
 const LEFT: { id: LeftTab; label: string }[] = [
   { id: "buildings", label: "Buildings" },
@@ -1153,6 +1154,7 @@ export class AppShell extends LitElement {
                 skipped_refs: string[];
                 missing_references: string[];
                 unverifiable_folders: string[];
+                import_notes: ImportNote[];
               };
               const warn = [
                 ...(r.skipped_refs.length
@@ -1167,9 +1169,11 @@ export class AppShell extends LitElement {
                   ? ["folders without a verifiable signature"]
                   : []),
               ];
+              // The notes are about what the project never held, not about this export failing.
+              const kept = (r.import_notes ?? []).map((n) => importNoteText(n));
               store.say(
-                `Exported ${r.path} (project/${r.schema}, ${Math.round(r.bytes / 1024)} kB)${warn.length ? `; the import may complain: ${warn.join(", ")}` : ""}`,
-                warn.length ? "primary" : "success",
+                `Exported ${r.path} (project/${r.schema}, ${Math.round(r.bytes / 1024)} kB)${warn.length ? `; the import may complain: ${warn.join(", ")}` : ""}${kept.length ? `. ${tr("Kept back on import")}: ${kept.join(" ")}` : ""}`,
+                warn.length || kept.length ? "primary" : "success",
               );
             })}
           >${tr("Export")}</sl-button

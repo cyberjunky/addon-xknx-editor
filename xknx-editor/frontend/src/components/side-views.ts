@@ -4,6 +4,7 @@ import { customElement, state } from "lit/decorators.js";
 import { api, ApiError } from "../api.js";
 import { store } from "../store.js";
 import { t as tr } from "../i18n.js";
+import { importNoteText, type ImportNote } from "../import-notes.js";
 
 const shared = css`
   :host {
@@ -294,6 +295,16 @@ export class ProjectInfoView extends LitElement {
       !this.decrypted &&
       traces.some((t) => (t as { encrypted?: boolean }).encrypted);
     return html`
+      ${
+        ((d.import_notes as ImportNote[]) ?? []).length
+          ? html`<div class="note" style="margin-bottom:8px">
+              <b>${tr("Kept back on import")}</b>
+              <ul style="margin:4px 0 0;padding-left:18px">
+                ${(d.import_notes as ImportNote[]).map((n) => html`<li>${importNoteText(n)}</li>`)}
+              </ul>
+            </div>`
+          : nothing
+      }
       <table>
         ${row(tr("Name"), d.name)}${row(tr("Group address style"), d.group_address_style)}${row(tr("Created by"), d.created_by)}${row(tr("Tool version"), d.tool_version)}
         ${row(tr("Schema version"), d.schema_version)}${row(tr("Last modified"), d.last_modified)}${row("GUID", d.guid)}${row(tr("Project ID"), d.id)}${row(tr("Devices"), d.device_count)}${row(tr("File"), d.path)}

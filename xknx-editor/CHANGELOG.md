@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1 (2026-09-19)
+
+- What a project lost when it was imported is shown: the Project dock lists it ("2 lines have more
+  than one segment", "the file holds 3 installations"), and an export repeats it, since the file
+  written back cannot carry what the project never held. Upstream records these notes; they were
+  stored and never shown.
+
 ## 0.4.0 (2026-09-19)
 
 - The vendored editor packages are upstream v0.1.5. A project keeps far more of itself through an

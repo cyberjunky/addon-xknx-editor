@@ -371,3 +371,40 @@ def test_a_product_without_an_application_can_be_added(client: TestClient) -> No
     finally:
         editor.catalog.list_products = real  # type: ignore[assignment]
     assert product["product_ref_id"]
+
+
+def test_import_notes_are_reported(client: TestClient, dirs: tuple[Path, Path]) -> None:
+    """What the source .knxproj carried that the project cannot hold: kept on the project and
+    echoed by an export, so a round trip can be trusted for what it says."""
+    _, share = dirs
+    from tests.conftest import KNXPROJ
+
+    job = wait_job(client, client.post("/api/project/import", json={"path": str(share / KNXPROJ.name)}).json())
+    assert job["status"] == "done", job
+    # This fixture imports losslessly; the shape is what the UI reads.
+    assert client.get("/api/project").json()["import_notes"] == []
+    job = wait_job(client, client.post("/api/project/export", json={"path": str(share / "notes.knxproj")}).json())
+    assert job["status"] == "done", job
+    assert job["result"]["import_notes"] == []
+
+
+def test_import_notes_read_from_the_project(tmp_path: Path) -> None:
+    """A project that did lose something reports it per code, count and detail."""
+    from types import SimpleNamespace
+
+    from xknxeditor.proj.core.import_notes import ImportLoss, dumps
+
+    from xknxeditor_web.config import Settings
+    from xknxeditor_web.editor import Editor
+    from xknxeditor_web.worker import EditorWorker
+
+    stored = dumps([ImportLoss("multi_segment", 2, ""), ImportLoss("dropped_duplicate_lines", 1, "4.1")])
+    editor = Editor(Settings(config_dir=tmp_path, share_dir=tmp_path, ingress_only=False, ingress_entry="", upstream_ref="t", language=None), EditorWorker())
+    editor.pid = "P-TEST"
+    editor.projects = SimpleNamespace(project=lambda _pid: SimpleNamespace(import_notes=stored))  # type: ignore[assignment]
+    assert editor.import_notes() == [
+        {"code": "multi_segment", "count": 2, "detail": ""},
+        {"code": "dropped_duplicate_lines", "count": 1, "detail": "4.1"},
+    ]
+    editor.pid = None
+    assert editor.import_notes() == []
