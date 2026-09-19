@@ -1,6 +1,7 @@
 """Sign a ``.knxproj`` folder through the vendor ``Knx.Ets.XmlSigning`` assembly.
 
-The reference implementation of this mechanism is OpenKNXproducer (``Signing/XmlSigner.cs``):
+The reference implementation of this mechanism is OpenKNXproducer
+(https://github.com/OpenKNX/OpenKNXproducer, ``Signing/XmlSigner.cs``):
 load the assembly with ``Assembly.LoadFrom(<ets-path>\\Knx.Ets.XmlSigning.dll)`` and invoke the
 static, non-public ``Knx.Ets.XmlSigning.XmlSigning.SignDirectory(path,
 useCasingOfBaggagesXml, excludeFileEndings)``. This module does the same from Python via
@@ -21,7 +22,7 @@ from typing import Any
 from xknxeditor.proj.core.knxproj_signing import verify_directory_signature
 
 # Candidate ETS install roots, mirroring OpenKNXproducer's gPathETS.
-_ETS_ROOTS: tuple[str, ...] = (
+ETS_ROOTS: tuple[str, ...] = (
     r"C:\Program Files (x86)\ETS6",
     r"C:\Program Files (x86)\ETS5",
     r"C:\Program Files\ETS6",
@@ -44,7 +45,7 @@ def _load_signer() -> Any | None:
     pythonnet.load("netfx")  # type: ignore[no-untyped-call]
     import clr  # type: ignore[import-not-found]
 
-    for root in _ETS_ROOTS:
+    for root in ETS_ROOTS:
         dll = Path(root) / "Knx.Ets.XmlSigning.dll"
         if not dll.is_file():
             continue

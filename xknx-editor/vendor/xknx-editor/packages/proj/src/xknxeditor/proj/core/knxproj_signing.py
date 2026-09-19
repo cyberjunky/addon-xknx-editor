@@ -15,8 +15,9 @@ digest of the folder's contents:
 3. the digest is ``sha1(utf-8(that string))``;
 4. the signature is ``RSA-PKCS#1v1.5(sha1)`` of that digest, base64 encoded.
 
-Mirrors the vendor ``Knx.Ets.XmlSigning`` assembly (reference: OpenKNXproducer ``Signing/XmlSigner.cs``,
-wrapped by :mod:`_dll_signer`). Signs every folder offline (see :func:`set_signing_key`). Folders with a file name
+Mirrors the vendor ``Knx.Ets.XmlSigning`` assembly (reference: OpenKNXproducer
+https://github.com/OpenKNX/OpenKNXproducer, ``Signing/XmlSigner.cs``, wrapped by :mod:`_dll_signer`).
+Signs every folder offline (see :func:`set_signing_key`). Folders with a file name
 outside the embedded NLS table cannot be ordered offline and are surfaced by
 :func:`audit_and_sign_folders` (extend the table via ``nls_sortkeys.ps1``).
 """
@@ -33,7 +34,6 @@ from xknxeditor.proj.core._nls_sortkeys import CHAR_SORTKEYS
 # Throwaway 1024-bit RSA key so folders get a well-formed .signature (all an import needs). Stored as
 # lowercase hex — the same format the Signing window shows/edits. Replaced at runtime via
 # set_signing_key() with the genuine key extracted from the user's ETS DLL (see key_extract).
-# (Ported from upstream 2b60e07 into the vendored tree; the add-on stores the key under /config.)
 _PLACEHOLDER_MODULUS = "9878171fc16318fd7295e0cb2442d0bedb5435013a55e4806515f60b874d9b8415b18e5f508fa9758bdc443f4e1d2af3e198213fd4bc4e2dd172d9d80364cdd2d59c05b85fc69b9035d37b9e4542c7ab848b5930cbc5040915dd3ce39ad10c9cc96883fda6f165fce665fcd4a4fca8cdfe3c0da5e58f6e1de020b82404d8952f"
 _PLACEHOLDER_PRIVATE_EXPONENT = "c7bd8b8dae6b8471838b95d28ace7d698b2be5c49607b032043ba0f9b967923497b6e42d39fcfaa363764c72228353a1ec08c0863ecbf21f542481fedb7353aeb9271f334780282a57213afbb405ee85916f18ec4435e3cac0a76297ccad31e2031c8681b9af1121450330aa63ef5059524e91f1f6cdd84bb495e9f3d309fb1"
 _MODULUS = int(_PLACEHOLDER_MODULUS, 16)
@@ -72,6 +72,8 @@ def current_signing_key() -> tuple[int, int, int]:
 def signing_key_is_placeholder() -> bool:
     """Whether the active key is the built-in placeholder (signatures not ETS-valid)."""
     return _params == _default_params
+
+
 # ASN.1 DigestInfo prefix for a SHA-1 hash (RFC 3447).
 _SHA1_DIGEST_INFO_PREFIX = bytes.fromhex("3021300906052b0e03021a05000414")
 

@@ -118,6 +118,12 @@ async def test_full_edit_flow(tmp_path: Path) -> None:
         device = await _data(client, "project_add_device", product_ref_id=product_ref)
         node_id = device["node_id"]
         assert isinstance(node_id, int)
+        # Device dicts carry the (editable) description, in both the list and the single view.
+        listed = await _data(client, "project_list_devices")
+        assert all("description" in d for d in listed["items"])
+        assert "description" in (
+            await _data(client, "project_get_device", node_id=node_id)
+        )
         com_objects = (
             await _data(client, "project_list_com_objects", node_id=node_id)
         )["items"]
@@ -128,6 +134,19 @@ async def test_full_edit_flow(tmp_path: Path) -> None:
         # Parameters are introspectable (ref_id + allowed values), enabling project_set_parameter.
         params = await _data(client, "project_list_parameters", node_id=node_id)
         assert "count" in params and isinstance(params["items"], list)
+
+        # The nested parameter tree exposes the same parameters under their group headings.
+        tree = await _data(client, "project_parameter_tree", node_id=node_id)
+
+        def _params_in(nodes: list[dict[str, Any]]) -> int:
+            n = 0
+            for nd in nodes:
+                if nd.get("kind") == "parameter":
+                    n += 1
+                n += _params_in(nd.get("children", []))
+            return n
+
+        assert _params_in(tree["items"]) == params["count"]
 
         # Batch: create a GA and link the com-object atomically in one call.
         batch = await _data(
@@ -153,11 +172,23 @@ async def test_full_edit_flow(tmp_path: Path) -> None:
         assert isinstance(link["link_id"], int)
         assert link["com_object_db_id"] == db_id
 
-        # The link shows up in the GA's assignments.
+        # The link shows up in the GA's assignments, resolved to its device.
         assignments = (
             await _data(client, "project_get_ga_assignments", group_address_id=ga_id)
         )["items"]
         assert any(a["com_object_db_id"] == db_id for a in assignments)
+        assert any(a["node_id"] == node_id for a in assignments)
+
+        # ...and the reverse lookup (com-object -> group addresses) finds the same GA.
+        links = (
+            await _data(
+                client,
+                "project_get_com_object_links",
+                node_id=node_id,
+                com_object_ref_id=ref_id,
+            )
+        )["items"]
+        assert any(link_["group_address_id"] == ga_id for link_ in links)
 
         # Undo removes the link.
         assert (await _data(client, "project_undo"))["undone"] is True

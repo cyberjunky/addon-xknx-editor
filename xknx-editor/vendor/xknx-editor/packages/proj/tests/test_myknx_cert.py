@@ -1,7 +1,6 @@
 """Error surfacing for the MyKnx certificate flow.
 
-The workset flow fails with HTTP 422 when the picked license is not a cloud-enabled ETS product.
-That must raise a typed :class:`MyKnxError` carrying the raw server ``detail`` (for logs) and a
+The workset flow fails with HTTP 422 when the picked license is not cloud-enabled. That must raise a typed :class:`MyKnxError` carrying the raw server ``detail`` (for logs) and a
 concise, actionable ``user_message`` (for the UI), not an opaque ``bytes`` repr.
 """
 
@@ -19,6 +18,7 @@ from xknxeditor.proj.core.myknx_cert import (
     MyKnxSession,
     _redact_url,
     _server_detail,
+    _type_is_cloud_capable,
 )
 
 _CLOUD_422 = (
@@ -31,6 +31,20 @@ def test_server_detail_unwraps_json_string() -> None:
     assert _server_detail(b'"boom"') == "boom"
     assert _server_detail(b'{"message": "nope"}') == "nope"
     assert _server_detail(b"not json") == "not json"
+
+
+def test_type_is_cloud_capable_keys_on_the_encryptions_list() -> None:
+    """Only product types whose ``encryptions`` contains ``"cloud"`` can sign online (ETS6 and
+    cloud-enabled apps); ETS5/older or dongle-only types cannot -- this is the discriminator the
+    certificate endpoint enforces (others fail add-product with HTTP 422)."""
+    assert (
+        _type_is_cloud_capable({"encryptions": ["ets_dongle", "cloud"]}) is True
+    )  # ETS6
+    assert _type_is_cloud_capable({"encryptions": ["cloud"]}) is True  # ETS app
+    assert _type_is_cloud_capable({"encryptions": ["ets_dongle"]}) is False  # ETS5
+    assert _type_is_cloud_capable({"encryptions": []}) is False  # account's licenses
+    assert _type_is_cloud_capable({}) is False  # missing field
+    assert _type_is_cloud_capable(None) is False  # unknown product type
 
 
 def _fake_post(url: str, body: bytes, headers: dict[str, str], timeout: float):
@@ -116,39 +130,37 @@ def test_login_does_not_log_the_password(
 
 
 def test_certificate_name_is_the_certificate_filename() -> None:
-    """ETS sends `{pid}.certificate` as projectName; the server echoes it into the CERT header."""
+    """projectName is `{pid}.certificate`; the server echoes it into the CERT header."""
     assert myknx_cert.certificate_name("P-0532") == "P-0532.certificate"
 
 
-def testnormalize_certificate_produces_ets_crlf_form() -> None:
-    """The API returns LF text; a genuine archive stores CRLF and ends with a blank line."""
+def test_project_hash_is_the_folder_signature_verbatim() -> None:
+    """projectHash is the base64 folder signature sent unchanged (server hashes it), not sha256."""
+    sig = "I0PYKDTsrx1/P+3BbLnQScy5DmGulsdXzB23mVKjYcdq"
+    assert myknx_cert.project_hash(sig.encode("utf-8")) == sig
+    # a UTF-8 BOM (as written into the .signature file) is stripped.
+    assert myknx_cert.project_hash(b"\xef\xbb\xbf" + sig.encode("utf-8")) == sig
+
+
+def test_normalize_certificate_produces_crlf_form() -> None:
+    """The API returns LF text; archives store CRLF and end with a blank line (issue #16)."""
     out = myknx_cert.normalize_certificate(
         'CERT KNX:"P-1.certificate"\n\tID="CloudLicense"\n\tSIGN=AB\n'
     )
     assert out == b'CERT KNX:"P-1.certificate"\r\n\tID="CloudLicense"\r\n\tSIGN=AB\r\n\r\n'
-    # idempotent: already-CRLF input must not gain \r\r\n or a second blank line
+    # idempotent: already-CRLF input (with its blank line) must not gain \r\r\n
     assert myknx_cert.normalize_certificate(out.decode("utf-8")) == out
 
 
-def testnormalize_certificate_collapses_trailing_blank_lines() -> None:
-    """However many blank lines arrive, the member ends with exactly one."""
+def test_normalize_certificate_collapses_trailing_blank_lines() -> None:
     assert myknx_cert.normalize_certificate("CERT\n\n\n") == b"CERT\r\n\r\n"
-
-
-def testnormalize_certificate_keeps_the_genuine_member_length() -> None:
-    """The real member is 485 bytes where stripping to one CRLF gave 483 (upstream issue #16)."""
-    body = 'CERT KNX:"P-01A2.certificate"\n\tID="CloudLicense"\n\tSIGN=' + "A" * 400
-    out = myknx_cert.normalize_certificate(body)
-    single_crlf = (body.replace("\n", "\r\n") + "\r\n").encode("utf-8")
-    assert out.endswith(b"\r\n\r\n")
-    assert len(out) == len(single_crlf) + 2
 
 
 def test_certificate_response_bare_json_string_is_unescaped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The endpoint returns a bare JSON *string*; returning it verbatim wrote the escaping into
-    {pid}.certificate (file starting with a quote, literal \\n), which ETS rejects."""
+    {pid}.certificate (file starting with a quote, literal \\n), which is rejected."""
     body = (
         b'"CERT KNX:\\"P-9.certificate\\"\\n\\tID=\\"CloudLicense\\"\\n\\tSIGN=FF\\n"'
     )

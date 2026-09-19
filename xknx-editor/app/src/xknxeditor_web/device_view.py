@@ -30,6 +30,7 @@ from xknxeditor.prod.parser_v2.ui import (
 
 if TYPE_CHECKING:
     from xknxeditor.prod import Application
+from xknxeditor.proj.core.identity import qualified_com_object_ref
 
 FLAG_COLUMNS = (
     "communication_flag",
@@ -75,10 +76,20 @@ def _enable(value: bool | None) -> Enable | None:
     return None if value is None else (Enable.ENABLED if value else Enable.DISABLED)
 
 
-def instance_ref_from_row(row: Any) -> ComObjectInstanceRef:
+def qualified_ref(row: Any, app_program_id: str) -> str:
+    """The qualified per-instance ref of a com-object row: what the dynamic UI keys objects by.
+
+    ``ComObject.ref_id`` is module-instance stripped, so matching on it alone makes every channel of
+    a repeated module the same object (upstream issue #17)."""
+    return qualified_com_object_ref(
+        row.ref_id, getattr(row, "instance_ref_id", "") or "", app_program_id
+    )
+
+
+def instance_ref_from_row(row: Any, app_program_id: str = "") -> ComObjectInstanceRef:
     """A com-object instance ref carrying the row's flag overrides (bare ref when none)."""
     return ComObjectInstanceRef(
-        ref_id=row.ref_id,
+        ref_id=qualified_ref(row, app_program_id),
         communication_flag=_enable(row.communication_flag),
         read_flag=_enable(row.read_flag),
         write_flag=_enable(row.write_flag),
@@ -112,12 +123,15 @@ class DeviceView:
     def __init__(self, device_id: int, app: Application, row: Any) -> None:
         self.device_id = device_id
         self.app = app
-        self._row_ids: dict[str, int] = {co.ref_id: co.id for co in row.com_objects}
+        self.app_program_id = app.program.id if app.program is not None else ""
+        self._row_ids: dict[str, int] = {
+            qualified_ref(co, self.app_program_id): co.id for co in row.com_objects
+        }
         self._dyn: DynamicUI | None = None
         if app.program.dynamic is not None:
             pirs = [ParameterInstanceRef(ref_id=p.ref_id, value=p.value) for p in row.parameters]
             mis = [ModuleInstance(id=m.instance_id, ref_id=m.ref_id) for m in row.module_instances]
-            coirs = [instance_ref_from_row(co) for co in row.com_objects]
+            coirs = [instance_ref_from_row(co, self.app_program_id) for co in row.com_objects]
             self._dyn = DynamicUI(
                 app.program,
                 parameter_instance_refs=pirs or None,

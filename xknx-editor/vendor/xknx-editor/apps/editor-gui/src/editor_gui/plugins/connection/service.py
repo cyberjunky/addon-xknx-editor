@@ -550,6 +550,58 @@ class ConnectionService:
             serial=info.serial_number,
         )
 
+    def run_dali(
+        self,
+        device: Device,
+        op: Callable[[Any], Coroutine[Any, Any, Any]],
+        *,
+        channel: int = 0,
+    ) -> Future[Any] | None:
+        """Run one MDT-DALI commissioning coroutine against ``device`` over the bus.
+
+        ``op`` receives an :class:`~xknxeditor.dali.MdtDaliCommissioner` and returns a coroutine
+        (e.g. ``lambda c: c.scan()``). Acquires the exclusive bus slot, uses the device's Tool-Key
+        security if a keyring is loaded, and releases the slot in the done-callback. The caller
+        attaches its own callback to consume the result.
+        """
+        if self.not_connected("dali_commissioning"):
+            return None
+        if not device.individual_address:
+            self._log.warning("Device has no individual address", device=device.name)
+            return None
+        from editor_gui.programming_dali import run_dali_operation
+
+        if not self.begin_operation("dali", device.individual_address):
+            self._log.warning("A bus operation is already running", device=device.name)
+            return None
+        security = self._security_for(device)
+        future = self.run_async(
+            run_dali_operation(
+                self._xknx, device.individual_address, security, channel, op
+            )
+        )
+        if future is not None:
+            future.add_done_callback(
+                functools.partial(
+                    self._log_dali_result, address=device.individual_address
+                )
+            )
+        else:
+            self._clear_busy()
+        return future
+
+    def _log_dali_result(self, future: Future[Any], address: str | None = None) -> None:
+        self._clear_busy()
+        if future.cancelled():
+            return
+        exc = future.exception()
+        if exc is not None:
+            self._log.error(
+                "DALI commissioning failed", address=address, error=str(exc)
+            )
+            return
+        self._log.info("DALI commissioning done", address=address)
+
     def run_async(self, coro: Coroutine[Any, Any, Any]) -> Future[Any] | None:
         if self._loop is None:
             coro.close()

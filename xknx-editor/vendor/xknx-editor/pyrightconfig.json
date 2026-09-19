@@ -1,6 +1,7 @@
 {
   "include": [
     "packages/catalog/src",
+    "packages/dali/src",
     "packages/download/src",
     "packages/datasecure/src",
     "packages/namespaces/src",

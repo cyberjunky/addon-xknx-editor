@@ -178,12 +178,8 @@ def rtf_to_text(text: str) -> str:
 
 
 def _object_owner(ed: Editor) -> dict[int, tuple[int, str]]:
-    """com_object row id -> (device id, ref id)."""
-    owner: dict[int, tuple[int, str]] = {}
-    for d in ed.projects.devices(ed._pid()):  # noqa: SLF001
-        for co in d.com_objects:
-            owner[co.id] = (d.id, co.ref_id)
-    return owner
+    """com_object row id -> (device id, qualified ref), the form the device views speak."""
+    return ed.com_object_owners()
 
 
 def _object_names(ed: Editor, device_id: int, cache: dict[int, dict[str, tuple[int, str]]]) -> dict[str, tuple[int, str]]:

@@ -1,27 +1,20 @@
 diff --git a/packages/proj/src/xknxeditor/proj/core/myknx_cert.py b/packages/proj/src/xknxeditor/proj/core/myknx_cert.py
-index 3559576..14bff14 100644
+index 8022b68..2377d7c 100644
 --- a/packages/proj/src/xknxeditor/proj/core/myknx_cert.py
 +++ b/packages/proj/src/xknxeditor/proj/core/myknx_cert.py
-@@ -103,14 +103,22 @@ def certificate_name(pid: str) -> str:
+@@ -91,13 +91,16 @@ def certificate_name(pid: str) -> str:
  
  
  def normalize_certificate(text: str) -> bytes:
--    """Return certificate text as ETS writes it: CRLF line endings, one trailing CRLF.
-+    """Return certificate text as ETS writes it: CRLF line endings, ending in a blank line.
+-    """Return certificate text with CRLF line endings and exactly one trailing CRLF.
++    """Return certificate text with CRLF line endings and a blank line at the end.
  
-     The API hands back LF-separated text; genuine ETS archives store CRLF throughout (verified
--    against a real ``.validation``). Normalising here keeps ``{pid}.certificate`` and the
--    ``certificate:`` block of ``.validation`` byte-identical to the ETS form.
-+    against a real ``.validation``). Normalising here keeps ``{pid}.certificate`` byte-identical
-+    to the ETS form.
-+
-+    The member ends with ``\\r\\n\\r\\n`` — the content, then a blank line. A genuine ETS
-+    ``.certificate`` measures 485 bytes where stripping to a single CRLF gives 483, which left the
-+    archive self-contradictory: the ``certificate:`` block inlined in ``.validation`` did carry the
-+    blank line, so the two copies of the same certificate disagreed by two bytes (upstream issue
-+    #16, diffed against a real ETS6 archive). ``.validation`` itself is unaffected either way,
-+    since :func:`~xknxeditor.proj.core.knxproj_export.validation_record` strips the certificate's
-+    trailing newlines and adds its own separators.
+     The API returns LF text; archives store CRLF. Normalising keeps ``{pid}.certificate`` and the
+-    ``.validation`` block byte-identical.
++    ``.validation`` block byte-identical. A genuine certificate ends with an empty line (two CRLF,
++    485 bytes where one CRLF gives 483), and the ``certificate:`` block inlined in ``.validation``
++    carries it too, so a single CRLF leaves the archive holding two copies of the same certificate
++    that disagree by two bytes (upstream issue #16).
      """
      normalized = text.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n")
 -    return (normalized.replace("\n", "\r\n") + "\r\n").encode("utf-8")
@@ -30,42 +23,32 @@ index 3559576..14bff14 100644
  
  def _redact_url(url: str) -> str:
 diff --git a/packages/proj/tests/test_myknx_cert.py b/packages/proj/tests/test_myknx_cert.py
-index 2b762de..7d3d8b8 100644
+index 0beb7da..e6a8b0e 100644
 --- a/packages/proj/tests/test_myknx_cert.py
 +++ b/packages/proj/tests/test_myknx_cert.py
-@@ -121,17 +121,27 @@ def test_certificate_name_is_the_certificate_filename() -> None:
+@@ -143,17 +143,17 @@ def test_project_hash_is_the_folder_signature_verbatim() -> None:
  
  
- def testnormalize_certificate_produces_ets_crlf_form() -> None:
--    """The API returns LF text; genuine ETS archives store CRLF with exactly one trailing CRLF."""
-+    """The API returns LF text; a genuine archive stores CRLF and ends with a blank line."""
+ def test_normalize_certificate_produces_crlf_form() -> None:
+-    """The API returns LF text; archives store CRLF with exactly one trailing CRLF."""
++    """The API returns LF text; archives store CRLF and end with a blank line (issue #16)."""
      out = myknx_cert.normalize_certificate(
          'CERT KNX:"P-1.certificate"\n\tID="CloudLicense"\n\tSIGN=AB\n'
      )
 -    assert out == b'CERT KNX:"P-1.certificate"\r\n\tID="CloudLicense"\r\n\tSIGN=AB\r\n'
 -    # idempotent: already-CRLF input must not gain \r\r\n
 +    assert out == b'CERT KNX:"P-1.certificate"\r\n\tID="CloudLicense"\r\n\tSIGN=AB\r\n\r\n'
-+    # idempotent: already-CRLF input must not gain \r\r\n or a second blank line
++    # idempotent: already-CRLF input (with its blank line) must not gain \r\r\n
      assert myknx_cert.normalize_certificate(out.decode("utf-8")) == out
  
  
- def testnormalize_certificate_collapses_trailing_blank_lines() -> None:
+ def test_normalize_certificate_collapses_trailing_blank_lines() -> None:
 -    assert myknx_cert.normalize_certificate("CERT\n\n\n") == b"CERT\r\n"
-+    """However many blank lines arrive, the member ends with exactly one."""
 +    assert myknx_cert.normalize_certificate("CERT\n\n\n") == b"CERT\r\n\r\n"
-+
-+
-+def testnormalize_certificate_keeps_the_genuine_member_length() -> None:
-+    """The real member is 485 bytes where stripping to one CRLF gave 483 (upstream issue #16)."""
-+    body = 'CERT KNX:"P-01A2.certificate"\n\tID="CloudLicense"\n\tSIGN=' + "A" * 400
-+    out = myknx_cert.normalize_certificate(body)
-+    single_crlf = (body.replace("\n", "\r\n") + "\r\n").encode("utf-8")
-+    assert out.endswith(b"\r\n\r\n")
-+    assert len(out) == len(single_crlf) + 2
  
  
  def test_certificate_response_bare_json_string_is_unescaped(
-@@ -160,7 +170,7 @@ def test_certificate_response_bare_json_string_is_unescaped(
+@@ -182,7 +182,7 @@ def test_certificate_response_bare_json_string_is_unescaped(
      cert = session.project_certificate("PROD", "hash", "P-9.certificate")
  
      assert cert == (

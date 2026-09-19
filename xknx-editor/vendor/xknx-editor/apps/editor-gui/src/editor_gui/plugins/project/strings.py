@@ -352,8 +352,8 @@ class ProjectStrings:
     @property
     def TOOLS_LABELS_DESC(self) -> str:
         return _(
-            "Export the device list (address, name, order number, manufacturer, "
-            "description) to a CSV you can print as on-site labels."
+            "Pick the fields and an output: a CSV, printable label sheets (Avery), or a "
+            "full-page legend. HTML output opens in your browser to print or save as PDF."
         )
 
     @property
@@ -445,6 +445,79 @@ class ProjectStrings:
     @property
     def TOOLS_LABELS_DONE(self) -> str:
         return _("Exported to {path}")
+
+    # Labels: field selection (keys match label_render.FIELD_IDS).
+    @property
+    def TOOLS_LABEL_FIELDS(self) -> dict[str, str]:
+        return {
+            "ia": _("Address"),
+            "name": _("Name"),
+            "location": _("Location"),
+            "description": _("Description"),
+            "order": _("Order number"),
+            "manufacturer": _("Manufacturer"),
+            "product": _("Product"),
+            "hardware": _("Hardware"),
+            "serial": _("Serial number"),
+            "application": _("Application"),
+            "gas": _("Group addresses"),
+        }
+
+    @property
+    def TOOLS_LABELS_FIELDS_TITLE(self) -> str:
+        return _("Fields")
+
+    @property
+    def TOOLS_LABELS_OUTPUT(self) -> str:
+        return _("Output")
+
+    @property
+    def TOOLS_LABELS_MODE_CSV(self) -> str:
+        return _("CSV")
+
+    @property
+    def TOOLS_LABELS_MODE_SHEET(self) -> str:
+        return _("Label sheet")
+
+    @property
+    def TOOLS_LABELS_MODE_LEGEND(self) -> str:
+        return _("Legend (full page)")
+
+    @property
+    def TOOLS_LABELS_SHEET(self) -> str:
+        return _("Sheet")
+
+    @property
+    def TOOLS_LABELS_SHEET_CUSTOM(self) -> str:
+        return _("Custom grid")
+
+    @property
+    def TOOLS_LABELS_GRID_COLS(self) -> str:
+        return _("Columns")
+
+    @property
+    def TOOLS_LABELS_GRID_ROWS(self) -> str:
+        return _("Rows")
+
+    @property
+    def TOOLS_LABELS_GRID_LABEL_MM(self) -> str:
+        return _("Label w x h (mm)")
+
+    @property
+    def TOOLS_LABELS_GRID_MARGIN_MM(self) -> str:
+        return _("Margin top / left (mm)")
+
+    @property
+    def TOOLS_LABELS_GRID_GAP_MM(self) -> str:
+        return _("Gap x / y (mm)")
+
+    @property
+    def TOOLS_LABELS_EXPORT_HTML(self) -> str:
+        return _("Export HTML...")
+
+    @property
+    def TOOLS_LABELS_NO_FIELDS(self) -> str:
+        return _("Select at least one field.")
 
     @property
     def TOOLS_TOPOLOGY_OK(self) -> str:
@@ -701,6 +774,55 @@ class ProjectStrings:
         return _("Filter log")
 
     @property
+    def PROJECT_LOG_DECRYPT(self) -> str:
+        return _("Decrypt comments")
+
+    @property
+    def PROJECT_LOG_EXTRACT(self) -> str:
+        return _("Extract from Knx.Ets.Common.dll…")
+
+    @property
+    def PROJECT_LOG_DECRYPT_HINT(self) -> str:
+        return _(
+            "ETS encrypts the log comments. Extract the decryption key from your own ETS "
+            "installation's Knx.Ets.Common.dll to read them; nothing is sent anywhere."
+        )
+
+    @property
+    def PROJECT_LOG_ENCRYPTED(self) -> str:
+        return _("Comments are encrypted")
+
+    @property
+    def PROJECT_LOG_DECRYPTED(self) -> str:
+        return _("Comments decrypted")
+
+    @property
+    def PROJECT_LOG_EXTRACTING(self) -> str:
+        return _("Extracting key…")
+
+    @property
+    def PROJECT_LOG_EXTRACT_DONE(self) -> str:
+        return _("Key extracted; comments decrypted")
+
+    @property
+    def PROJECT_LOG_NO_BACKEND(self) -> str:
+        return _(
+            "No .NET runtime found (install the .NET SDK, or run on Windows with ETS)."
+        )
+
+    @property
+    def PROJECT_LOG_DLL_FILTER(self) -> str:
+        return _("KNX common assembly")
+
+    @property
+    def PROJECT_LOG_ALL_FILES(self) -> str:
+        return _("All files")
+
+    @property
+    def PROJECT_LOG_CREDIT(self) -> str:
+        return _("Based on OpenKNXproducer")
+
+    @property
     def CONFIGURE_ORDER_NUMBER(self) -> str:
         return _("Order number")
 
@@ -729,12 +851,39 @@ class ProjectStrings:
         return _("Channels ({count})")
 
     @property
+    def EDITOR_TAB_DALI(self) -> str:
+        return _("DALI (Bus)")
+
+    @property
     def GA_NO_PROJECT(self) -> str:
         return _("No project")
 
     @property
     def GA_ASSIGNED_OBJECTS(self) -> str:
         return _("Assigned objects")
+
+    @property
+    def GA_COL_DEVICE(self) -> str:
+        return _("Device")
+
+    @property
+    def GA_COL_OBJECT(self) -> str:
+        return _("Object")
+
+    @property
+    def GA_COL_SENDING(self) -> str:
+        return _("S")
+
+    @property
+    def GA_COL_SENDING_TOOLTIP(self) -> str:
+        return _(
+            "S = Sending. This object sends its value to the group address; "
+            "the others only receive it."
+        )
+
+    @property
+    def GA_OBJECT_OPEN_TOOLTIP(self) -> str:
+        return _("Click to open this device in the editor")
 
     @property
     def CONFIGURE_NO_DEVICES(self) -> str:
@@ -937,6 +1086,30 @@ class ProjectStrings:
     @property
     def CONFIGURE_PROGRAM_REF(self) -> str:
         return _("Program ref")
+
+    @property
+    def CONFIGURE_IP_CONFIG(self) -> str:
+        return _("IP configuration")
+
+    @property
+    def CONFIGURE_IP_ASSIGN(self) -> str:
+        return _("Assignment")
+
+    @property
+    def CONFIGURE_IP_ADDRESS(self) -> str:
+        return _("IP address")
+
+    @property
+    def CONFIGURE_IP_SUBNET(self) -> str:
+        return _("Subnet mask")
+
+    @property
+    def CONFIGURE_IP_GATEWAY(self) -> str:
+        return _("Default gateway")
+
+    @property
+    def CONFIGURE_IP_MAC(self) -> str:
+        return _("MAC address")
 
     @property
     def CONFIGURE_OPEN_MANUAL(self) -> str:
@@ -1257,6 +1430,17 @@ class ProjectStrings:
     @property
     def CONTEXT_DUPLICATE(self) -> str:
         return _("Duplicate")
+
+    @property
+    def DEVICE_DELETE_TITLE(self) -> str:
+        return _("Delete device")
+
+    @property
+    def DEVICE_DELETE_CONFIRM(self) -> str:
+        return _(
+            "Delete '{name}'? Its com-objects and group-address links are removed and its "
+            "individual address is freed. This can be undone."
+        )
 
     @property
     def POPUP_NEW_AREA(self) -> str:

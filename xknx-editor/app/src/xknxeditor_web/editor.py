@@ -24,7 +24,7 @@ from xknxeditor.proj import (
 from xknxeditor.proj.core.addressing import GroupAddressStyle
 
 from xknxeditor_web.config import Settings
-from xknxeditor_web.device_view import FLAG_COLUMNS, DeviceView, instance_ref_from_row
+from xknxeditor_web.device_view import FLAG_COLUMNS, DeviceView, instance_ref_from_row, qualified_ref
 from xknxeditor_web.errors import ApiError, NoProject, NotFound
 from xknxeditor_web.online_catalog import OnlineCatalog
 from xknxeditor_web import backup as backup_mod
@@ -534,6 +534,19 @@ class Editor:
             }
         return product_ref_id in self._products_without_application
 
+    def com_object_owners(self) -> dict[int, tuple[int, str]]:
+        """``com_object row id -> (device id, qualified ref)``.
+
+        The stored ``ref_id`` strips the module instance, so a name looked up in a device view has
+        to be found under the qualified ref instead (see :func:`device_view.qualified_ref`)."""
+        owner: dict[int, tuple[int, str]] = {}
+        for d in self.projects.devices(self._pid()):
+            app = self._resolve_app(d.hardware2program_ref_id)
+            app_program_id = app.id if app is not None else ""
+            for co in d.com_objects:
+                owner[co.id] = (d.id, qualified_ref(co, app_program_id))
+        return owner
+
     def _drop_views(self, *device_ids: int) -> None:
         if device_ids:
             for did in device_ids:
@@ -768,7 +781,9 @@ class Editor:
         before = view.active_com_object_ref_ids()
         view.set_parameter(ref_id, value)
         after = view.active_com_object_ref_ids()
-        current = {co.ref_id for co in self._row(device_id).com_objects}
+        # The active set speaks the qualified per-instance ref; a stored row's ``ref_id`` has the
+        # module instance stripped, so the two only line up through qualified_ref (issue #17).
+        current = {qualified_ref(co, view.app_program_id) for co in self._row(device_id).com_objects}
         add = (after - before) - current
         remove = (before - after) & current
         target = (current - remove) | add
@@ -777,7 +792,12 @@ class Editor:
             changed = False
         else:
             self.projects.set_parameter_and_sync_com_objects(
-                pid, device_id, ref_id, value, [(r, None) for r in sorted(target)]
+                pid,
+                device_id,
+                ref_id,
+                value,
+                [(r, None) for r in sorted(target)],
+                app_program_id=view.app_program_id,
             )
             self._drop_views(device_id)
             changed = True
@@ -790,20 +810,30 @@ class Editor:
         if column is None or column not in FLAG_COLUMNS:
             raise ApiError(f"Unknown flag {flag!r}; use one of {sorted(FLAG_NAMES)}")
         view = self.view(device_id)
-        row = next((c for c in self._row(device_id).com_objects if c.ref_id == ref_id), None)
-        if row is None:
-            raise NotFound(f"Device {device_id} has no com-object {ref_id}")
+        row = self._com_object_row(device_id, ref_id, view)
         self.projects.set_com_object_flag(pid, row.id, column, value)
-        row = next(c for c in self._row(device_id).com_objects if c.ref_id == ref_id)
-        view.set_instance_ref(ref_id, instance_ref_from_row(row))
+        row = self._com_object_row(device_id, ref_id, view)
+        view.set_instance_ref(ref_id, instance_ref_from_row(row, view.app_program_id))
         self._bump(structural=False, device=device_id)
         return {"device_id": device_id, "ref_id": ref_id, "flag": flag, "value": value}
 
-    def link(self, device_id: int, ref_id: str, group_address_id: int, sending: bool) -> dict[str, Any]:
-        pid = self._pid()
-        row = next((c for c in self._row(device_id).com_objects if c.ref_id == ref_id), None)
+    def _com_object_row(self, device_id: int, ref_id: str, view: DeviceView) -> Any:
+        """The com-object row of a device by the qualified ref the UI uses (see qualified_ref)."""
+        row = next(
+            (
+                c
+                for c in self._row(device_id).com_objects
+                if qualified_ref(c, view.app_program_id) == ref_id
+            ),
+            None,
+        )
         if row is None:
             raise NotFound(f"Device {device_id} has no com-object {ref_id}")
+        return row
+
+    def link(self, device_id: int, ref_id: str, group_address_id: int, sending: bool) -> dict[str, Any]:
+        pid = self._pid()
+        row = self._com_object_row(device_id, ref_id, self.view(device_id))
         link_id = self.projects.link_com_object(pid, row.id, group_address_id, sending=sending)
         self._bump(structural=False, device=device_id)
         return {"link_id": link_id}
@@ -1033,10 +1063,7 @@ class Editor:
             raise NotFound(str(exc)) from exc
         data = plain(ga)
         devices = {d.id: d for d in self.projects.devices(pid)}
-        co_owner: dict[int, tuple[int, str]] = {}
-        for d in devices.values():
-            for co in d.com_objects:
-                co_owner[co.id] = (d.id, co.ref_id)
+        co_owner = self.com_object_owners()
         assignments = []
         names: dict[int, dict[str, tuple[int, str]]] = {}
         for ln in self.projects.group_address_links(pid, ga_id):
