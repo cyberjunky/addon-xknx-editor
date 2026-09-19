@@ -370,6 +370,9 @@ def test_a_product_without_an_application_can_be_added(client: TestClient) -> No
         summary = next(x for x in client.get("/api/project/devices").json()["items"] if x["id"] == d["id"])
         assert summary["no_application"] is True and summary["resolved"] is False
         assert client.get(f"/api/devices/{d['id']}/com-objects").status_code == 422
+        # Nor in the Group objects view: it has no objects because it has no application, which is
+        # not the same as a device whose product data the catalog is missing.
+        assert client.get("/api/project/objects").json()["devices_without_product_data"] == 0
 
     finally:
         editor.catalog.list_products = real  # type: ignore[assignment]

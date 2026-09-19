@@ -5,6 +5,11 @@
 - The connection diagram no longer cuts names off. Every column is measured and drawn as wide as its
   own longest line, so a device, a group address and the value in a telegram's bubble are read in
   full; the diagram scrolls sideways when that makes it wide.
+- Picking a room in the Device overview no longer opens the device instead: the row's click is the
+  one that selects, and the Room cell keeps its own.
+- A product without an application program (a power supply) is no longer counted as a device left
+  out of the Group objects view for want of catalog data. It has no group objects because it has no
+  application, which is not the same as missing data.
 
 ## 0.4.3 (2026-09-19)
 

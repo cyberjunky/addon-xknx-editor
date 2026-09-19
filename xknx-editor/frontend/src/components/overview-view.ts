@@ -365,7 +365,8 @@ export class OverviewView extends LitElement {
               <td style="text-align:center">${this.renderOnline(d)}</td>
               <td style="text-align:center">${this.renderVerified(d)}</td>
               <td class="addr">${deviceAddress(d.individual_address, d.line)}</td>
-              <td>
+              <!-- The row opens the device; picking a room here must not count as that click. -->
+              <td @click=${(e: Event) => e.stopPropagation()} draggable="false">
                 <sl-select
                   size="small"
                   hoist

@@ -346,6 +346,10 @@ def project_objects(ed: Editor) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     missing = 0
     for d in ed.devices():
+        # A product without an application program (a power supply) has no group objects at all,
+        # so it is not a device whose data is missing - it is a device with nothing to show.
+        if d.get("no_application"):
+            continue
         try:
             cos = ed.view(d["id"]).com_objects()
         except ApiError:
