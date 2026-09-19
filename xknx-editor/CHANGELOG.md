@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.4 (2026-09-19)
+
+- The connection diagram no longer cuts names off. Every column is measured and drawn as wide as its
+  own longest line, so a device, a group address and the value in a telegram's bubble are read in
+  full; the diagram scrolls sideways when that makes it wide.
+
 ## 0.4.3 (2026-09-19)
 
 - Group objects a device has switched on but that the project never gave a row are listed above the

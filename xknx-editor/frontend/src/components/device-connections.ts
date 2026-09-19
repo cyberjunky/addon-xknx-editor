@@ -37,8 +37,11 @@ type Pulse = { from: string; value: string; until: number; seq: number };
 
 const ROW = 38;
 const BOX_H = 30;
-const COL_W = 220;
 const GAP = 120;
+/** Inside a box: the padding either side, and the gap between address and name (the tspan's dx). */
+const PAD = 8;
+const DX = 6;
+const MIN_COL = 160;
 
 /** How a device reaches the rest of the installation: its group objects' addresses in the middle,
  * every other device on them on the right. Telegrams on those addresses run along the lines. */
@@ -206,8 +209,28 @@ export class DeviceConnections extends LitElement {
     }, 250);
   }
 
-  private label(text: string, max: number): string {
-    return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+  /** An SVG box gets no layout of its own, so it is sized from the measured text it holds. */
+  private ctx: CanvasRenderingContext2D | null = null;
+
+  private textWidth(text: string, mono: boolean): number {
+    if (!this.ctx) this.ctx = document.createElement("canvas").getContext("2d");
+    if (!this.ctx) return text.length * (mono ? 7.2 : 6.6);
+    const family = mono
+      ? "ui-monospace, Menlo, Consolas, monospace"
+      : getComputedStyle(this).fontFamily || "sans-serif";
+    this.ctx.font = `12px ${family}`;
+    return this.ctx.measureText(text).width;
+  }
+
+  /** Wide enough for the widest address + name in the column, so no name has to be cut. */
+  private columnWidth(rows: { addr: string; name: string }[]): number {
+    let w = MIN_COL;
+    for (const r of rows)
+      w = Math.max(
+        w,
+        PAD + this.textWidth(r.addr, true) + DX + this.textWidth(r.name, false) + PAD,
+      );
+    return Math.ceil(w);
   }
 
   render() {
@@ -236,10 +259,21 @@ export class DeviceConnections extends LitElement {
         }
     const rows = Math.max(d.group_addresses.length, peers.length, 1);
     const height = rows * ROW + 20;
+    const self = d.device;
+    // Every column is as wide as its own longest line; the diagram scrolls if that is wide.
+    const w0 = this.columnWidth([
+      { addr: self.individual_address ?? "-.-.-", name: self.name },
+    ]);
+    const w1 = this.columnWidth(
+      d.group_addresses.map((g) => ({ addr: g.text, name: g.name })),
+    );
+    const w2 = this.columnWidth(
+      peers.map((p) => ({ addr: p.individual_address ?? "-.-.-", name: p.name })),
+    );
     const x0 = 10;
-    const x1 = x0 + COL_W + GAP;
-    const x2 = x1 + COL_W + GAP;
-    const width = x2 + COL_W + 10;
+    const x1 = x0 + w0 + GAP;
+    const x2 = x1 + w1 + GAP;
+    const width = x2 + w2 + 10;
     const selfY = height / 2 - BOX_H / 2;
     const gaY = (i: number) =>
       10 + i * ROW + ((rows - d.group_addresses.length) * ROW) / 2;
@@ -248,7 +282,6 @@ export class DeviceConnections extends LitElement {
       const mid = (xa + xb) / 2;
       return `M${xa},${ya} C${mid},${ya} ${mid},${yb} ${xb},${yb}`;
     };
-    const self = d.device;
     return html`
       <div class="legend">
         <span>${d.group_addresses.length} ${tr("group addresses")}</span>
@@ -262,31 +295,32 @@ export class DeviceConnections extends LitElement {
           ${d.group_addresses.map((g, i) => {
             const hot = this.pulses.has(g.id);
             const y = gaY(i) + BOX_H / 2;
-            return svg`<path class="edge ${sends.has(g.id) ? "sending" : ""} ${hot ? "hot" : ""}" d=${curve(x0 + COL_W, selfY + BOX_H / 2, x1, y)}></path>
-              ${g.peers.map((p) => svg`<path class="edge ${p.sending ? "sending" : ""} ${hot ? "hot" : ""}" d=${curve(x1 + COL_W, y, x2, peerY(peerIndex.get(p.device_id)!) + BOX_H / 2)}></path>`)}`;
+            return svg`<path class="edge ${sends.has(g.id) ? "sending" : ""} ${hot ? "hot" : ""}" d=${curve(x0 + w0, selfY + BOX_H / 2, x1, y)}></path>
+              ${g.peers.map((p) => svg`<path class="edge ${p.sending ? "sending" : ""} ${hot ? "hot" : ""}" d=${curve(x1 + w1, y, x2, peerY(peerIndex.get(p.device_id)!) + BOX_H / 2)}></path>`)}`;
           })}
           <g>
-            <rect class="box self" x=${x0} y=${selfY} width=${COL_W} height=${BOX_H} rx="6"></rect>
+            <rect class="box self" x=${x0} y=${selfY} width=${w0} height=${BOX_H} rx="6"></rect>
             <text x=${x0 + 8} y=${selfY + 19}>
               <tspan class="addr">${self.individual_address ?? "-.-.-"}</tspan>
-              <tspan dx="6">${this.label(self.name, 22)}</tspan>
+              <tspan dx="6">${self.name}</tspan>
             </text>
           </g>
           ${d.group_addresses.map((g, i) => {
             const y = gaY(i);
             const pulse = this.pulses.get(g.id);
+            const bw = pulse ? Math.ceil(this.textWidth(pulse.value, false)) + 16 : 0;
             return svg`<g class="click" @click=${() => store.selectGroupAddress(g.id)}>
               <title>${g.text} ${g.name}${g.dpt ? ` · ${formatDpt(g.dpt)}` : ""}\n${g.peers.map((p) => `${p.individual_address ?? "-"} ${p.name} · #${p.object_number} ${p.object_name}${p.sending ? " (sends)" : ""}`).join("\n")}</title>
-              <rect class="box ga ${pulse ? "hot" : ""}" x=${x1} y=${y} width=${COL_W} height=${BOX_H} rx="6"></rect>
-              <text x=${x1 + 8} y=${y + 19}><tspan class="addr">${g.text}</tspan><tspan dx="6">${this.label(g.name, 18)}</tspan></text>
+              <rect class="box ga ${pulse ? "hot" : ""}" x=${x1} y=${y} width=${w1} height=${BOX_H} rx="6"></rect>
+              <text x=${x1 + 8} y=${y + 19}><tspan class="addr">${g.text}</tspan><tspan dx="6">${g.name}</tspan></text>
               ${
                 pulse
                   ? svg`<g class="bubble">
-                      <rect x=${x1 + COL_W - 90} y=${y - 14} width="96" height="18" rx="9"></rect>
-                      <text x=${x1 + COL_W - 42} y=${y - 1} text-anchor="middle">${this.label(pulse.value, 13)}</text>
+                      <rect x=${x1 + w1 + 6 - bw} y=${y - 14} width=${bw} height="18" rx="9"></rect>
+                      <text x=${x1 + w1 + 6 - bw / 2} y=${y - 1} text-anchor="middle">${pulse.value}</text>
                     </g>
                     <circle class="dot" r="4">
-                      <animateMotion dur="0.8s" repeatCount="1" fill="freeze" path=${this.pulsePath(pulse, self.individual_address, x0, x1, x2, selfY, y, peers, peerIndex, peerY)}></animateMotion>
+                      <animateMotion dur="0.8s" repeatCount="1" fill="freeze" path=${this.pulsePath(pulse, self.individual_address, x0, x1, x2, w0, w1, selfY, y, peers, peerIndex, peerY)}></animateMotion>
                     </circle>`
                   : nothing
               }
@@ -296,8 +330,8 @@ export class DeviceConnections extends LitElement {
             const y = peerY(i);
             return svg`<g class="click" @click=${() => store.select(p.device_id)}>
               <title>${p.individual_address ?? "-"} ${p.name}</title>
-              <rect class="box" x=${x2} y=${y} width=${COL_W} height=${BOX_H} rx="6"></rect>
-              <text x=${x2 + 8} y=${y + 19}><tspan class="addr">${p.individual_address ?? "-.-.-"}</tspan><tspan dx="6">${this.label(p.name, 22)}</tspan></text>
+              <rect class="box" x=${x2} y=${y} width=${w2} height=${BOX_H} rx="6"></rect>
+              <text x=${x2 + 8} y=${y + 19}><tspan class="addr">${p.individual_address ?? "-.-.-"}</tspan><tspan dx="6">${p.name}</tspan></text>
             </g>`;
           })}
         </svg>
@@ -312,6 +346,8 @@ export class DeviceConnections extends LitElement {
     x0: number,
     x1: number,
     x2: number,
+    w0: number,
+    w1: number,
     selfY: number,
     gaY: number,
     peers: { device_id: number; individual_address: string | null }[],
@@ -320,12 +356,12 @@ export class DeviceConnections extends LitElement {
   ): string {
     const y = gaY + BOX_H / 2;
     if (pulse.from === selfAddress)
-      return `M${x0 + COL_W},${selfY + BOX_H / 2} L${x1},${y}`;
+      return `M${x0 + w0},${selfY + BOX_H / 2} L${x1},${y}`;
     const peer = peers.find((p) => p.individual_address === pulse.from);
     if (peer) {
       const py = peerY(peerIndex.get(peer.device_id)!) + BOX_H / 2;
-      return `M${x2},${py} L${x1 + COL_W},${y}`;
+      return `M${x2},${py} L${x1 + w1},${y}`;
     }
-    return `M${x1 + COL_W / 2},${gaY - 20} L${x1 + COL_W / 2},${gaY}`;
+    return `M${x1 + w1 / 2},${gaY - 20} L${x1 + w1 / 2},${gaY}`;
   }
 }
