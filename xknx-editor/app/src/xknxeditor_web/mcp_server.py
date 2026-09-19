@@ -289,11 +289,26 @@ def build(app: Starlette, token: str) -> tuple[Any, Any]:
 
     @tool()
     async def project_list_com_objects(device_id: int) -> dict[str, Any]:
-        """The device's communication objects with flags, DPT and links (linkable = db_id set)."""
+        """The device's communication objects with flags, DPT and links (linkable = db_id set).
+
+        ``missing`` lists the objects the device has switched on that the project never gave a row,
+        so they cannot be linked yet; project_add_missing_com_objects gives them one.
+        """
         data = await run(ed().com_objects, device_id)
         for item in data["items"]:
             item["linkable"] = item.get("db_id") is not None
+        data["missing"] = await run(ed().missing_com_objects, device_id)
         return data
+
+    @tool()
+    async def project_add_missing_com_objects(device_id: int) -> dict[str, Any]:
+        """Give every active group object of the device a row, so it can be linked.
+
+        An imported device only carries the objects ETS instantiated: one switched on by a parameter
+        that was already set when the project was written has no row, and stays unlinkable until this
+        adds one. Adds only - nothing the device already has is touched - and is undoable.
+        """
+        return await run(ed().add_missing_com_objects, device_id)
 
     @tool()
     async def project_set_com_object_flag(device_id: int, ref_id: str, flag: Flag, value: bool | None) -> dict[str, Any]:

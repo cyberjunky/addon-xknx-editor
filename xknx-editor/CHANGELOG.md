@@ -10,6 +10,9 @@
 - A product without an application program (a power supply) is no longer counted as a device left
   out of the Group objects view for want of catalog data. It has no group objects because it has no
   application, which is not the same as missing data.
+- MCP gained project_add_missing_com_objects, the tool form of 0.4.3's "Add them" button, and
+  project_list_com_objects now reports `missing` alongside the items. Without it an assistant could
+  see that a device's objects had no row but had nothing to do about it.
 
 ## 0.4.3 (2026-09-19)
 
