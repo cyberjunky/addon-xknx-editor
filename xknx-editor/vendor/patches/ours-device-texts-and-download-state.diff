@@ -1,8 +1,21 @@
+diff --git a/packages/proj/src/xknxeditor/proj/models.py b/packages/proj/src/xknxeditor/proj/models.py
+index 38cf3ac..f64a87b 100644
+--- a/packages/proj/src/xknxeditor/proj/models.py
++++ b/packages/proj/src/xknxeditor/proj/models.py
+@@ -225,6 +225,8 @@ class Device(Base):
+     # Descriptive metadata carried over from the imported .knxproj (for display without a catalog).
+     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+     comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
++    # The DeviceInstance's InstallationHints, round-tripped like the other free texts.
++    installation_hints: Mapped[str] = mapped_column(Text, nullable=False, default="")
+     # The DeviceInstance ``LastModified`` timestamp, carried over verbatim (nullable, like
+     # ``last_download``). Emitted as-is on export.
+     last_modified: Mapped[str | None] = mapped_column(String)
 diff --git a/packages/proj/src/xknxeditor/proj/core/events.py b/packages/proj/src/xknxeditor/proj/core/events.py
-index 2c0aec9..bfef714 100644
+index 4c37f7f..674b2b9 100644
 --- a/packages/proj/src/xknxeditor/proj/core/events.py
 +++ b/packages/proj/src/xknxeditor/proj/core/events.py
-@@ -1180,6 +1180,86 @@ class SetDeviceName(Event):
+@@ -1228,6 +1228,86 @@ class SetDeviceName(Event):
          return cls(**data)
  
  
@@ -88,174 +101,9 @@ index 2c0aec9..bfef714 100644
 +
  @_register
  @dataclass
- class MoveDevice(Event):
-diff --git a/packages/proj/src/xknxeditor/proj/core/knxproj_export.py b/packages/proj/src/xknxeditor/proj/core/knxproj_export.py
-index 7d48eff..7bbabb7 100644
---- a/packages/proj/src/xknxeditor/proj/core/knxproj_export.py
-+++ b/packages/proj/src/xknxeditor/proj/core/knxproj_export.py
-@@ -763,6 +763,7 @@ class _Writer:
-                             "Segment",
-                             Id=f"{pid}-0_S-{s_seq}",
-                             Number=segment.number,
-+                            Name=segment.name or None,
-                             MediumTypeRefId=segment.medium_type,
-                             Puid=self._next_puid(),
-                         )
-@@ -885,6 +886,8 @@ class _Writer:
-             ProductRefId=device.product_ref_id,
-             Hardware2ProgramRefId=device.hardware2program_ref_id,
-             Description=device.description or None,
-+            Comment=device.comment or None,
-+            InstallationHints=device.installation_hints or None,
-             # Commissioning state ("loaded" ticks + serial / last download). Emit the flags
-             # only when set; an absent attribute means "not loaded" (matching genuine exports and
-             # round-trips).
-diff --git a/packages/proj/src/xknxeditor/proj/core/knxproj_import.py b/packages/proj/src/xknxeditor/proj/core/knxproj_import.py
-index 688735b..4367109 100644
---- a/packages/proj/src/xknxeditor/proj/core/knxproj_import.py
-+++ b/packages/proj/src/xknxeditor/proj/core/knxproj_import.py
-@@ -142,6 +142,22 @@ class _BinaryEntry:
-     do_not_copy: bool = False
- 
- 
-+@dataclass(frozen=True, slots=True)
-+class _SegmentEntry:
-+    """A ``Line/Segment`` from the raw project XML, with the devices that sit on it.
-+
-+    A line repeater splits a TP line into segments; ETS writes one ``<Segment>`` per part and puts
-+    each ``<DeviceInstance>`` inside the one it belongs to. xknxproject reads only the first
-+    segment's medium type and then lists every device of the line, so the split has to be read
-+    here or it is lost.
-+    """
-+
-+    number: int
-+    medium_type: str
-+    name: str
-+    device_ids: tuple[str, ...]
-+
-+
- @dataclass(frozen=True, slots=True)
- class _TraceEntry:
-     """A ``ProjectInformation/ProjectTraces/ProjectTrace`` entry, captured verbatim.
-@@ -178,6 +194,10 @@ class _RawExtras:
-         self.module_args: ModuleArgsMap = {}
-         # ETS project-log entries, in document order (captured verbatim; comment stays encrypted).
-         self.traces: list[_TraceEntry] = []
-+        # DeviceInstance @Id -> (Comment, InstallationHints); xknxproject keeps neither.
-+        self.device_texts: dict[str, tuple[str, str]] = {}
-+        # (area address, line address) -> its segments, in document order.
-+        self.segments: dict[tuple[int, int], list[_SegmentEntry]] = {}
- 
- 
- def _parse(
-@@ -194,6 +214,7 @@ def _parse(
-         # archive is still open.
-         extras = _read_device_extras(contents)
-         extras.traces = _read_project_traces(contents)
-+        extras.segments = _read_segments(contents)
-     logger.debug(
-         "parsed knxproj '%s': %d devices, %d group addresses, %d w/ binary data, %d w/ modules, %d traces",
-         parser.project_info.name,
-@@ -232,9 +253,59 @@ def _read_device_extras(contents: _ProjectContents) -> _RawExtras:
-         modules = _read_module_args(device)
-         if modules:
-             extras.module_args[device_id] = modules
-+        comment = device.get("Comment") or ""
-+        hints = device.get("InstallationHints") or ""
-+        if comment or hints:
-+            extras.device_texts[device_id] = (comment, hints)
-     return extras
- 
- 
-+def _read_segments(contents: _ProjectContents) -> dict[tuple[int, int], list[_SegmentEntry]]:
-+    """Every line's ``<Segment>`` elements with the devices on them, from the raw ``0.xml``.
-+
-+    Best-effort: without segments (ETS 5 and older write the devices straight under the line) the
-+    result is empty and the importer falls back to one segment per line.
-+    """
-+    try:
-+        with contents.open_project_0() as handle:
-+            root = ET.parse(handle).getroot()
-+    except Exception as e:  # noqa: BLE001 - optional, like the other raw extras
-+        logger.debug("could not read raw 0.xml for segments: %s", e)
-+        return {}
-+    found: dict[tuple[int, int], list[_SegmentEntry]] = {}
-+    for area in root.iter():
-+        if _localname(area.tag) != "Area":
-+            continue
-+        area_address = _int(area.get("Address"))
-+        for line in area:
-+            if _localname(line.tag) != "Line":
-+                continue
-+            entries = [
-+                _SegmentEntry(
-+                    number=_int(segment.get("Number")),
-+                    medium_type=segment.get("MediumTypeRefId") or "",
-+                    name=segment.get("Name") or "",
-+                    device_ids=tuple(
-+                        device.get("Id") or ""
-+                        for device in segment
-+                        if _localname(device.tag) == "DeviceInstance" and device.get("Id")
-+                    ),
-+                )
-+                for segment in line
-+                if _localname(segment.tag) == "Segment"
-+            ]
-+            if entries:
-+                found[(area_address, _int(line.get("Address")))] = entries
-+    return found
-+
-+
-+def _int(value: str | None) -> int:
-+    try:
-+        return int(value or 0)
-+    except ValueError:
-+        return 0
-+
-+
- def _read_project_traces(contents: _ProjectContents) -> list[_TraceEntry]:
-     """Every ``ProjectInformation/ProjectTraces/ProjectTrace`` from the raw ``project.xml``.
- 
-@@ -412,10 +483,26 @@ def _build_topology(
-                 ),
-             )
-             area.lines.append(line)
--            segment = Segment(number=0, medium_type=xline.medium_type)
--            line.segments.append(segment)
-+            raw_segments = state.extras.segments.get((xarea.address, xline.address), [])
-+            segments = [
-+                Segment(
-+                    number=entry.number,
-+                    medium_type=entry.medium_type or xline.medium_type,
-+                    name=entry.name,
-+                )
-+                for entry in raw_segments
-+            ] or [Segment(number=0, medium_type=xline.medium_type)]
-+            line.segments.extend(segments)
-+            # A line repeater gives the line a second segment; put every device on the one ETS
-+            # wrote it in, and anything unplaced on the first.
-+            by_device = {
-+                device_id: segments[i]
-+                for i, entry in enumerate(raw_segments)
-+                for device_id in entry.device_ids
-+            }
-             for xdevice in xline.devices:
-                 try:
-+                    segment = by_device.get(xdevice.identifier, segments[0])
-                     segment.devices.append(_build_device(xdevice, state))
-                 except Exception as e:
-                     # Partial load: a single malformed device must not abort the whole import.
-@@ -439,6 +526,8 @@ def _build_device(xdevice: DeviceInstance, state: _ImportState) -> Device:
-         product_ref_id=xdevice.product_ref,
-         hardware2program_ref_id=xdevice.hardware_program_ref,
-         description=xdevice.description,
-+        comment=state.extras.device_texts.get(xdevice.identifier, ("", ""))[0],
-+        installation_hints=state.extras.device_texts.get(xdevice.identifier, ("", ""))[1],
-         order_number=xdevice.order_number,
-         hardware_name=xdevice.hardware_name,
-         product_name=xdevice.product_name,
+ class SetDeviceDescription(Event):
 diff --git a/packages/proj/src/xknxeditor/proj/core/service.py b/packages/proj/src/xknxeditor/proj/core/service.py
-index a3f1ba4..9c040e2 100644
+index 8c79716..e7d6326 100644
 --- a/packages/proj/src/xknxeditor/proj/core/service.py
 +++ b/packages/proj/src/xknxeditor/proj/core/service.py
 @@ -38,6 +38,7 @@ from xknxeditor.proj.core.events import (
@@ -266,8 +114,8 @@ index a3f1ba4..9c040e2 100644
      LinkComObject,
      MoveDevice,
      MoveSpace,
-@@ -61,8 +62,10 @@ from xknxeditor.proj.core.events import (
-     SetDeviceCommissioning,
+@@ -62,8 +63,10 @@ from xknxeditor.proj.core.events import (
+     SetDeviceDescription,
      SetDeviceName,
      SetDeviceSpace,
 +    SetDeviceText,
@@ -277,7 +125,7 @@ index a3f1ba4..9c040e2 100644
      SetParameter,
      SetSpaceType,
      SyncDeviceComObjects,
-@@ -73,6 +76,7 @@ from xknxeditor.proj.core.skeleton import MEDIUM_TP, seed_new_project
+@@ -74,6 +77,7 @@ from xknxeditor.proj.core.skeleton import MEDIUM_TP, seed_new_project
  from xknxeditor.proj.db import make_engine, url_for
  from xknxeditor.proj.models import (
      Area,
@@ -285,16 +133,17 @@ index a3f1ba4..9c040e2 100644
      ComObjectLink,
      Device,
      Function,
-@@ -192,6 +196,8 @@ class DeviceInfo:
-     communication_part_loaded: bool
-     medium_config_loaded: bool
-     parameters_loaded: bool
-+    comment: str = ""
-+    installation_hints: str = ""
- 
- 
- @dataclass(frozen=True)
-@@ -336,8 +342,12 @@ class ProjectService:
+@@ -185,6 +189,9 @@ class DeviceInfo:
+     hardware_name: str
+     product_name: str
+     manufacturer_name: str
++    # The device's other free texts, edited in the add-on (see SetDeviceText).
++    comment: str
++    installation_hints: str
+     # Verbatim IPConfig attributes from import (IP router/interface); None when the device has no
+     # <IPConfig>. Read-only provenance, displayed only when it carries static values.
+     ip_config: dict[str, str] | None
+@@ -362,8 +369,12 @@ class ProjectService:
      def set_parameter(
          self, project_id: str, device_id: int, ref_id: str, value: str
      ) -> None:
@@ -309,7 +158,7 @@ index a3f1ba4..9c040e2 100644
          )
  
      def create_group_address(
-@@ -436,13 +446,24 @@ class ProjectService:
+@@ -462,13 +473,24 @@ class ProjectService:
              group_address_id=group_address_id,
              is_sending=sending,
          )
@@ -336,39 +185,22 @@ index a3f1ba4..9c040e2 100644
  
      def set_com_object_flag(
          self, project_id: str, com_object_id: int, flag: str, value: bool | None
-@@ -452,8 +473,30 @@ class ProjectService:
+@@ -478,8 +500,12 @@ class ProjectService:
          ``flag`` must be one of :data:`~xknxeditor.proj.core.events.COM_OBJECT_FLAGS`."""
          if flag not in COM_OBJECT_FLAGS:
              raise ValueError(f"Unknown com-object flag {flag!r}")
+-        self._state(project_id).store.append(
+-            SetComObjectFlag(com_object_id=com_object_id, flag=flag, value=value)
 +        state = self._state(project_id)
 +        self._append_changed(
 +            state,
 +            SetComObjectFlag(com_object_id=com_object_id, flag=flag, value=value),
 +            self._com_object_devices(state, [com_object_id]),
 +            "communication_part_loaded",
-+        )
-+
-+    def set_device_text(
-+        self, project_id: str, device_id: int, field: str, value: str
-+    ) -> None:
-+        """Set a device's ``description``, ``comment`` or ``installation_hints``."""
-         self._state(project_id).store.append(
--            SetComObjectFlag(com_object_id=com_object_id, flag=flag, value=value)
-+            SetDeviceText(device_id=device_id, field=field, value=value)
-+        )
-+
-+    def set_group_address_text(
-+        self, project_id: str, group_address_id: int, field: str, value: str
-+    ) -> None:
-+        """Set a group address's ``description`` or ``comment``."""
-+        self._state(project_id).store.append(
-+            SetGroupAddressText(
-+                group_address_id=group_address_id, field=field, value=value
-+            )
          )
  
      def set_group_address_datapoint_type(
-@@ -626,12 +669,28 @@ class ProjectService:
+@@ -652,12 +678,28 @@ class ProjectService:
          self._state(project_id).store.append(RemoveSegment(target_id=segment_id))
  
      def remove_group_address(self, project_id: str, group_address_id: int) -> None:
@@ -400,7 +232,32 @@ index a3f1ba4..9c040e2 100644
  
      def rename_area(self, project_id: str, area_id: int, name: str) -> None:
          self._state(project_id).store.append(RenameArea(area_id=area_id, name=name))
-@@ -677,7 +736,9 @@ class ProjectService:
+@@ -677,6 +719,24 @@ class ProjectService:
+             SetDeviceName(device_id=device_id, name=name)
+         )
+ 
++    def set_device_text(
++        self, project_id: str, device_id: int, field: str, value: str
++    ) -> None:
++        """Set a device's ``description``, ``comment`` or ``installation_hints``."""
++        self._state(project_id).store.append(
++            SetDeviceText(device_id=device_id, field=field, value=value)
++        )
++
++    def set_group_address_text(
++        self, project_id: str, group_address_id: int, field: str, value: str
++    ) -> None:
++        """Set a group address's ``description`` or ``comment``."""
++        self._state(project_id).store.append(
++            SetGroupAddressText(
++                group_address_id=group_address_id, field=field, value=value
++            )
++        )
++
+     def set_device_description(
+         self, project_id: str, device_id: int, description: str
+     ) -> None:
+@@ -714,7 +774,9 @@ class ProjectService:
      ) -> None:
          """Set a parameter and reconcile the device's com-objects to ``target`` as ONE undo step (a
          function/mode change and the objects it activates/deactivates must revert together)."""
@@ -411,8 +268,8 @@ index a3f1ba4..9c040e2 100644
              CompositeEvent(
                  events=[
                      SetParameter(device_id=device_id, ref_id=ref_id, value=value),
-@@ -686,7 +747,10 @@ class ProjectService:
-                         target=[[r, c] for r, c in target],
+@@ -724,7 +786,10 @@ class ProjectService:
+                         app_program_id=app_program_id,
                      ),
                  ]
 -            )
@@ -423,7 +280,7 @@ index a3f1ba4..9c040e2 100644
          )
  
      def update_device_application(
-@@ -736,9 +800,14 @@ class ProjectService:
+@@ -774,9 +839,14 @@ class ProjectService:
          state = self._state(project_id)
          if address is not None:
              self._check_unique_address(state, segment_id, address, exclude=device_id)
@@ -441,16 +298,16 @@ index a3f1ba4..9c040e2 100644
  
      # --- undo / redo / history --------------------------------------------
  
-@@ -816,6 +885,8 @@ class ProjectService:
-             communication_part_loaded=device.communication_part_loaded,
-             medium_config_loaded=device.medium_config_loaded,
-             parameters_loaded=device.parameters_loaded,
+@@ -847,6 +917,8 @@ class ProjectService:
+             hardware_name=device.hardware_name,
+             product_name=device.product_name,
+             manufacturer_name=device.manufacturer_name,
 +            comment=device.comment,
 +            installation_hints=device.installation_hints,
-         )
- 
-     def com_object_links(self, project_id: str, com_object_id: int) -> list[LinkInfo]:
-@@ -1170,6 +1241,56 @@ class ProjectService:
+             ip_config=device.ip_config,
+             serial_number=device.serial_number,
+             last_download=device.last_download,
+@@ -1213,6 +1285,56 @@ class ProjectService:
          line = device.segment.line
          return format_ia(line.area.address, line.address, device.address)
  
@@ -507,17 +364,48 @@ index a3f1ba4..9c040e2 100644
      def _first_segment(self, state: _Open, line: Line) -> Segment:
          segment = (
              state.session.query(Segment)
-diff --git a/packages/proj/src/xknxeditor/proj/models.py b/packages/proj/src/xknxeditor/proj/models.py
-index fdad08d..67061b0 100644
---- a/packages/proj/src/xknxeditor/proj/models.py
-+++ b/packages/proj/src/xknxeditor/proj/models.py
-@@ -189,6 +189,9 @@ class Device(Base):
-     space_id: Mapped[int | None] = mapped_column(ForeignKey("spaces.id"), index=True)
-     # Descriptive metadata carried over from the imported .knxproj (for display without a catalog).
-     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
-+    # The DeviceInstance's Comment (RTF as ETS writes it) and InstallationHints, round-tripped.
-+    comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
-+    installation_hints: Mapped[str] = mapped_column(Text, nullable=False, default="")
-     order_number: Mapped[str] = mapped_column(String, nullable=False, default="")
-     hardware_name: Mapped[str] = mapped_column(Text, nullable=False, default="")
-     product_name: Mapped[str] = mapped_column(Text, nullable=False, default="")
+diff --git a/packages/proj/src/xknxeditor/proj/core/knxproj_import.py b/packages/proj/src/xknxeditor/proj/core/knxproj_import.py
+index 24f3bde..e10e230 100644
+--- a/packages/proj/src/xknxeditor/proj/core/knxproj_import.py
++++ b/packages/proj/src/xknxeditor/proj/core/knxproj_import.py
+@@ -270,6 +270,8 @@ class _RawExtras:
+         self.central_ga: set[int] = set()
+         # Raw group-address values whose <GroupAddress> carries ``Global="true"``.
+         self.global_ga: set[int] = set()
++        # DeviceInstance @Id -> DeviceInstance @InstallationHints.
++        self.device_installation_hints: dict[str, str] = {}
+         # DeviceInstance @Id -> DeviceInstance @Comment.
+         self.device_comment: dict[str, str] = {}
+         # Space @Id -> Space @Comment.
+@@ -350,6 +352,9 @@ def _read_device_extras(contents: _ProjectContents) -> _RawExtras:
+         comment = device.get("Comment")
+         if comment:
+             extras.device_comment[device_id] = comment
++        hints = device.get("InstallationHints")
++        if hints:
++            extras.device_installation_hints[device_id] = hints
+         for cid, override in _read_com_object_text_overrides(device):
+             extras.com_object_text_overrides[cid] = override
+     extras.unassigned_devices = _read_unassigned_devices(root)
+@@ -953,6 +958,9 @@ def _build_device(xdevice: DeviceInstance, state: _ImportState) -> Device:
+         hardware2program_ref_id=xdevice.hardware_program_ref,
+         description=xdevice.description,
+         comment=state.extras.device_comment.get(xdevice.identifier, ""),
++        installation_hints=state.extras.device_installation_hints.get(
++            xdevice.identifier, ""
++        ),
+         last_modified=getattr(xdevice, "last_modified", None),
+         order_number=xdevice.order_number,
+         hardware_name=xdevice.hardware_name,
+diff --git a/packages/proj/src/xknxeditor/proj/core/knxproj_export.py b/packages/proj/src/xknxeditor/proj/core/knxproj_export.py
+index 253999c..40e85a4 100644
+--- a/packages/proj/src/xknxeditor/proj/core/knxproj_export.py
++++ b/packages/proj/src/xknxeditor/proj/core/knxproj_export.py
+@@ -1005,6 +1005,7 @@ class _Writer:
+             Hardware2ProgramRefId=device.hardware2program_ref_id,
+             Description=device.description or None,
+             Comment=device.comment or None,
++            InstallationHints=device.installation_hints or None,
+             LastModified=device.last_modified or None,
+             # Commissioning state ("loaded" ticks + serial / last download). Emit the flags
+             # only when set; an absent attribute means "not loaded" (matching genuine exports and

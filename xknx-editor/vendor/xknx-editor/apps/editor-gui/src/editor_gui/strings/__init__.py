@@ -72,6 +72,29 @@ class BaseStrings:
         )
 
     @property
+    def NETWORK_CONSENT_TITLE(self) -> str:
+        return _("Network location")
+
+    @property
+    def NETWORK_CONSENT_PROMPT(self) -> str:
+        return _(
+            "This location is on a network drive:\n{home}\n\n"
+            "KNX project files use a database that cannot run reliably on network shares. The "
+            "editor can work on a local copy instead and write it back to the network location "
+            "when you close the project."
+        )
+
+    @property
+    def NETWORK_CONSENT_USE_LOCAL(self) -> str:
+        return _("Use a local copy")
+
+    @property
+    def MIRROR_NOTICE(self) -> str:
+        return _(
+            "Working on a local copy; written back to {home} when you close the project."
+        )
+
+    @property
     def BTN_ADD(self) -> str:
         return _("Add")
 
@@ -342,6 +365,71 @@ class MenuStrings:
         return _("Exported to {path} ({size}) as {schema}")
 
     @property
+    def IMPORT_NOTES_TITLE(self) -> str:
+        return _("Good to know")
+
+    @property
+    def IMPORT_NOTES_INTRO_IMPORT(self) -> str:
+        return _(
+            "Your project opened fine and everything you need to work with is here. "
+            "A few extra details from the original file are shown a bit more simply:"
+        )
+
+    @property
+    def IMPORT_NOTES_INTRO_EXPORT(self) -> str:
+        return _(
+            "This project came from a file with a few extra details this editor does not "
+            "use. The export leaves these out:"
+        )
+
+    @property
+    def IMPORT_NOTES_CLOSE(self) -> str:
+        return _("Close")
+
+    @property
+    def IMPORT_NOTE_MULTIPLE_INSTALLATIONS(self) -> str:
+        return _(
+            "The original file had {count} installations. They were combined into one."
+        )
+
+    @property
+    def IMPORT_NOTE_UNASSIGNED_DEVICES(self) -> str:
+        return _(
+            "{count} device(s) had no place in the original file, so they were left out."
+        )
+
+    @property
+    def IMPORT_NOTE_COM_OBJECT_TEXT_OVERRIDES(self) -> str:
+        return _(
+            "{count} com-object(s) had an extra description in the original file. "
+            "The custom name and function are kept; only that description is not shown here."
+        )
+
+    @property
+    def IMPORT_NOTE_EXAMPLES(self) -> str:
+        return _("For example: {examples}")
+
+    @property
+    def IMPORT_NOTE_IP_CONFIG(self) -> str:
+        return _(
+            "{count} IP or function setting(s) from the original file are not used here."
+        )
+
+    @property
+    def IMPORT_NOTE_MULTI_SEGMENT(self) -> str:
+        return _(
+            "{count} line(s) use several segments. In a schema 14/20 export they are "
+            "shown at line level only."
+        )
+
+    @property
+    def IMPORT_NOTE_DROPPED_DUPLICATE_LINES(self) -> str:
+        return _(
+            "{count} line(s) had the same address in different installations. "
+            "One of each was kept when combining."
+        )
+
+    @property
     def MYKNX_SIGN_TITLE(self) -> str:
         return _("Sign export")
 
@@ -377,6 +465,22 @@ class MenuStrings:
         return _("No licenses found on this account")
 
     @property
+    def MYKNX_SIGN_NO_CLOUD(self) -> str:
+        return _("no online certificate")
+
+    @property
+    def MYKNX_SIGN_EXPIRED(self) -> str:
+        return _("expired")
+
+    @property
+    def MYKNX_SIGN_NO_CLOUD_HINT(self) -> str:
+        return _(
+            "None of these licenses can sign online. Only ETS6 (or a cloud-enabled ETS app) "
+            "licenses produce a certificate; ETS5/older licenses cannot. Use 'License with a "
+            "dongle' instead."
+        )
+
+    @property
     def MYKNX_SIGN_LOGIN_FAILED(self) -> str:
         return _("Login failed: {error}")
 
@@ -395,6 +499,22 @@ class MenuStrings:
     @property
     def MYKNX_DONGLE_BUTTON(self) -> str:
         return _("License with a dongle…")
+
+    @property
+    def SIGNING_KEY_BUTTON(self) -> str:
+        return _("Signing key…")
+
+    @property
+    def SIGNING_KEY_TITLE(self) -> str:
+        return _("Signing key")
+
+    @property
+    def SIGNING_KEY_CLOSE(self) -> str:
+        return _("Close")
+
+    @property
+    def SIGNING_KEY_PLACEHOLDER_HINT(self) -> str:
+        return _("Folder signature uses a placeholder key (not ETS-valid).")
 
     @property
     def MYKNX_DONGLE_BACK(self) -> str:

@@ -1,10 +1,25 @@
 # XKNX Editor
 
+
 XKNX Editor is a **multi-platform** desktop app (Windows, Linux, macOS) with native AI support for KNX building-automation projects based on KNX Standard Vol. 3, built on the open-source [xknx](https://github.com/XKNX/xknx)
 library. Import and export `.knxproj` projects natively by [XKNXProject](https://github.com/XKNX/xknxproject) and [OpenKNXProducer](https://github.com/OpenKNX/OpenKNXproducer), browse product catalogs, **program KNX
-devices** over a real bus based completely on the [XKNX Project XKNXToolkit](https://github.com/XKNX/xknxtoolkit), and drive it all through an **integrated MCP server for AI-assisted**
+devices** over a real bus based completely on the alpha version of [XKNX Project XKNXToolkit](https://github.com/XKNX/xknxtoolkit), and drive it all through an **integrated MCP server for AI-assisted**
 workflows which can auto download pdf manuals from the manufacturers.
 
+
+> [!WARNING]
+> **Not affiliated with the KNX Association.**
+>
+> XKNX Editor comes with no  guarantees. It is tested with real devices but still a download can leave a device unavailable until it
+> is reprogrammed. Do not use it on a professional installation you cannot access directly and
+> keep a ETS backup of any project before opening it here.
+>
+> Verified device coverage for downloading is good but not complete. Please report what works and what does not.
+>
+> **"KNX" and "ETS" are trademarks of the KNX Association.** This is an independent project, not
+> affiliated with, endorsed by, or connected to the KNX Association or its ETS software — including
+> the `knx-ai` account name, which denotes KNX + AI and implies no official status. See
+> [Disclaimer](#disclaimer) and [Purpose](#purpose-and-interoperability).
 
 ## Download
 
@@ -48,7 +63,8 @@ online catalog, cached locally for offline use.
 **Programming real devices** — commission a device end-to-end over a live connection (tunneling or
 routing, with gateway discovery), including setting a new device's address. A read-only **preflight**
 and **Test Before Programming** read the device back and show the exact changes before anything is
-written. Vendor-independent and verified on real hardware.
+written. Vendor-independent by design; see [Status and scope](#status-and-scope) for which devices
+have actually been exercised on a bus.
 
 ![Programming and preflight](docs/images/programming.png)
 
@@ -127,12 +143,33 @@ To test unreleased `xknx` changes, clone it as a sibling and add a `[tool.uv.sou
 - Python >= 3.13
 - [uv](https://docs.astral.sh/uv/)
 
+## Purpose and interoperability
+
+XKNX Editor is an independent, open-source tool that aims to improve interoperability within the KNX
+ecosystem: reading, editing and exchanging KNX project data (`.knxproj`) and programming KNX devices
+over the bus, without being tied to a single vendor's toolchain.
+
+The project is guided by the principle — reflected in EU law — that interoperability between
+independently created software should be possible (Directive 2009/24/EC on the legal protection of
+computer programs, Article 6), and that a strong market position should not be used to foreclose
+competition (Article 102 TFEU). XKNX Editor seeks to broaden choice and interoperability in KNX
+tooling in that spirit.
+
+This is a statement of the project's aims and not a legal determination about any third party.
+
 ## Disclaimer
 
 An independent, open-source project built on the [xknx](https://github.com/XKNX/xknx) library. **Not
 affiliated with, endorsed by, or connected to** the KNX Association or its ETS software. "KNX" and
 "ETS" are trademarks of the KNX Association, used here only to state this non-affiliation and to
 describe interoperability with the published standard and file formats.
+
+## Acknowledgements
+
+Thanks to [Federico Zivolo (@FezVrasta)](https://github.com/FezVrasta) for a series of security and
+correctness fixes: redacting MyKnx credentials in logs, hardening the embedded MCP server (Host/Origin
+guard, per-redirect allowlist re-check), writing settings files owner-only, safer device-programming
+preflight checks, and `.knxproj` export/certificate corrections.
 
 ## License
 

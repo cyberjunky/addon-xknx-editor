@@ -60,6 +60,7 @@ from xknxeditor.proj.core.events import (
     SetComObjectFlag,
     SetComObjectSending,
     SetDeviceCommissioning,
+    SetDeviceDescription,
     SetDeviceName,
     SetDeviceSpace,
     SetDeviceText,
@@ -188,6 +189,12 @@ class DeviceInfo:
     hardware_name: str
     product_name: str
     manufacturer_name: str
+    # The device's other free texts, edited in the add-on (see SetDeviceText).
+    comment: str
+    installation_hints: str
+    # Verbatim IPConfig attributes from import (IP router/interface); None when the device has no
+    # <IPConfig>. Read-only provenance, displayed only when it carries static values.
+    ip_config: dict[str, str] | None
     # Commissioning state ("loaded" ticks + serial / last download).
     serial_number: str
     last_download: str | None
@@ -196,8 +203,6 @@ class DeviceInfo:
     communication_part_loaded: bool
     medium_config_loaded: bool
     parameters_loaded: bool
-    comment: str = ""
-    installation_hints: str = ""
 
 
 @dataclass(frozen=True)
@@ -227,7 +232,10 @@ class ProjectService:
         pid = project_id or f"P-{uuid4().hex[:4].upper()}"
         engine = make_engine(url_for(Path(path)))
         session = Session(engine)
-        seed_new_project(session, pid, "New project", group_address_style)
+        # The default building is named after the project file (matching a fresh project).
+        seed_new_project(
+            session, pid, "New project", group_address_style, Path(path).stem
+        )
         self._register(pid, engine, session)
         return pid
 
@@ -261,8 +269,18 @@ class ProjectService:
         self, project_id: str, installation: int, address: int, name: str
     ) -> int:
         state = self._state(project_id)
+        inst = self._installation(state, installation)
+        clash = (
+            state.session.query(Area)
+            .filter_by(installation_id=inst.id, address=address)
+            .first()
+        )
+        if clash is not None:
+            raise ValueError(
+                f"Area address {address} already used in this installation by area {clash.id}"
+            )
         event = CreateArea(
-            installation_id=self._installation(state, installation).id,
+            installation_id=inst.id,
             address=address,
             name=name,
         )
@@ -274,6 +292,15 @@ class ProjectService:
         self, project_id: str, area_id: int, address: int, name: str
     ) -> int:
         state = self._state(project_id)
+        clash = (
+            state.session.query(Line)
+            .filter_by(area_id=area_id, address=address)
+            .first()
+        )
+        if clash is not None:
+            raise ValueError(
+                f"Line address {address} already used in this area by line {clash.id}"
+            )
         event = CreateLine(
             area_id=area_id, address=address, name=name, medium_type=MEDIUM_TP
         )
@@ -479,24 +506,6 @@ class ProjectService:
             SetComObjectFlag(com_object_id=com_object_id, flag=flag, value=value),
             self._com_object_devices(state, [com_object_id]),
             "communication_part_loaded",
-        )
-
-    def set_device_text(
-        self, project_id: str, device_id: int, field: str, value: str
-    ) -> None:
-        """Set a device's ``description``, ``comment`` or ``installation_hints``."""
-        self._state(project_id).store.append(
-            SetDeviceText(device_id=device_id, field=field, value=value)
-        )
-
-    def set_group_address_text(
-        self, project_id: str, group_address_id: int, field: str, value: str
-    ) -> None:
-        """Set a group address's ``description`` or ``comment``."""
-        self._state(project_id).store.append(
-            SetGroupAddressText(
-                group_address_id=group_address_id, field=field, value=value
-            )
         )
 
     def set_group_address_datapoint_type(
@@ -710,19 +719,47 @@ class ProjectService:
             SetDeviceName(device_id=device_id, name=name)
         )
 
+    def set_device_text(
+        self, project_id: str, device_id: int, field: str, value: str
+    ) -> None:
+        """Set a device's ``description``, ``comment`` or ``installation_hints``."""
+        self._state(project_id).store.append(
+            SetDeviceText(device_id=device_id, field=field, value=value)
+        )
+
+    def set_group_address_text(
+        self, project_id: str, group_address_id: int, field: str, value: str
+    ) -> None:
+        """Set a group address's ``description`` or ``comment``."""
+        self._state(project_id).store.append(
+            SetGroupAddressText(
+                group_address_id=group_address_id, field=field, value=value
+            )
+        )
+
+    def set_device_description(
+        self, project_id: str, device_id: int, description: str
+    ) -> None:
+        self._state(project_id).store.append(
+            SetDeviceDescription(device_id=device_id, description=description)
+        )
+
     def sync_device_com_objects(
         self,
         project_id: str,
         device_id: int,
         target: list[tuple[str, str | None]],
+        app_program_id: str = "",
     ) -> None:
         """Reconcile a device's com-object rows to ``target`` (the parameter-driven should-exist set
         of ``(ref_id, channel_id)``): add missing refs, remove obsolete ones (with links), keep
-        survivors. Undoable. The caller computes ``target`` (the project package is ref-only)."""
+        survivors. Undoable. The caller computes ``target`` (the project package is ref-only).
+        ``app_program_id`` resolves stored rows to the qualified per-instance ref the target speaks."""
         self._state(project_id).store.append(
             SyncDeviceComObjects(
                 device_id=device_id,
                 target=[[ref_id, channel_id] for ref_id, channel_id in target],
+                app_program_id=app_program_id,
             )
         )
 
@@ -733,6 +770,7 @@ class ProjectService:
         ref_id: str,
         value: str,
         target: list[tuple[str, str | None]],
+        app_program_id: str = "",
     ) -> None:
         """Set a parameter and reconcile the device's com-objects to ``target`` as ONE undo step (a
         function/mode change and the objects it activates/deactivates must revert together)."""
@@ -745,6 +783,7 @@ class ProjectService:
                     SyncDeviceComObjects(
                         device_id=device_id,
                         target=[[r, c] for r, c in target],
+                        app_program_id=app_program_id,
                     ),
                 ]
             ),
@@ -878,6 +917,9 @@ class ProjectService:
             hardware_name=device.hardware_name,
             product_name=device.product_name,
             manufacturer_name=device.manufacturer_name,
+            comment=device.comment,
+            installation_hints=device.installation_hints,
+            ip_config=device.ip_config,
             serial_number=device.serial_number,
             last_download=device.last_download,
             individual_address_loaded=device.individual_address_loaded,
@@ -885,8 +927,6 @@ class ProjectService:
             communication_part_loaded=device.communication_part_loaded,
             medium_config_loaded=device.medium_config_loaded,
             parameters_loaded=device.parameters_loaded,
-            comment=device.comment,
-            installation_hints=device.installation_hints,
         )
 
     def com_object_links(self, project_id: str, com_object_id: int) -> list[LinkInfo]:
@@ -1011,11 +1051,15 @@ class ProjectService:
 
         area_address = (coupler_address >> 12) & 0xF
         line_address = (coupler_address >> 8) & 0xF
+        # Deterministic + defensive: even though import now de-duplicates topology, never let a
+        # stray duplicate area/line make this raise (MultipleResultsFound) mid-download; take the
+        # lowest-id match.
         line = (
             session.query(Line)
             .join(Area, Line.area_id == Area.id)
             .filter(Area.address == area_address, Line.address == line_address)
-            .one_or_none()
+            .order_by(Line.id)
+            .first()
         )
         additional: set[int] = set()
         if line is not None:

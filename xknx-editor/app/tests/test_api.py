@@ -57,7 +57,9 @@ def test_new_project_and_edits(client: TestClient) -> None:
     b = client.post("/api/spaces", json={"space_type": "Building", "name": "Home"}).json()["id"]
     room = client.post("/api/spaces", json={"space_type": "Room", "name": "Hall", "parent_id": b}).json()["id"]
     tree = client.get("/api/spaces").json()["tree"]
-    assert tree[0]["name"] == "Home" and tree[0]["children"][0]["id"] == room
+    # A new project is seeded with a building named after it, so ours is the second root.
+    home = next(s for s in tree if s["name"] == "Home")
+    assert home["children"][0]["id"] == room
 
     # Revision advanced and history lists the edits.
     assert client.get("/api/project").json()["revision"] > 0

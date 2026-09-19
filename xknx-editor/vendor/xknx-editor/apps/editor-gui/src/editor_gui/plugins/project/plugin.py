@@ -18,6 +18,7 @@ from editor_gui.plugins.project.ui import (
     SpacesPanel,
     ToolsPanel,
 )
+from editor_gui.plugins.project.ui.dali_commissioning import DaliCommissioningPanel
 from editor_gui.plugins.project.ui.devices import Area, Line
 from editor_gui.plugins.project.ui.memory_preview import MemoryPreviewWindow
 from editor_gui.plugins.project.ui.preflight_result import PreflightResultWindow
@@ -108,6 +109,7 @@ class ProjectPlugin:
             get_selected_node_id=self._selected_node_id,
             on_select_devices=self._on_select_devices,
             get_selected_node_ids=lambda: api.project.selected_node_ids,
+            on_delete_device=self._on_delete_device,
         )
 
         self._configure_panel = ConfigurePanel(
@@ -119,6 +121,7 @@ class ProjectPlugin:
             on_param_change_selected=self._handle_param_change_selected,
             on_individual_address_change=self._handle_individual_address_change,
             on_name_change=self._handle_name_change,
+            on_description_change=self._handle_description_change,
             set_flag=self._handle_flag_change,
             get_links_for_com_object=self._links_for_com_object,
             get_all_group_addresses=self._all_group_addresses,
@@ -142,7 +145,9 @@ class ProjectPlugin:
             group_style=lambda: api.project.group_address_style,
             next_free_sub=self._next_free_sub,
             get_ga_range_tree=api.project.get_group_range_tree,
+            render_dali=self._render_dali_tab,
         )
+        self._dali_panel = DaliCommissioningPanel(self._run_dali)
 
         self._group_addresses_panel = GroupAddressesPanel(
             get_range_tree=api.project.get_group_range_tree,
@@ -157,6 +162,7 @@ class ProjectPlugin:
             on_rename_range=api.project.rename_group_range,
             on_remove_range=api.project.remove_group_range,
             group_style=lambda: api.project.group_address_style,
+            on_select_device_id=self._select_device_by_id,
         )
 
         self._spaces_panel = SpacesPanel(
@@ -210,6 +216,8 @@ class ProjectPlugin:
             on_shift_addresses=self._tools_shift_addresses,
             on_navigate=self._select_device_by_id,
             on_replace_device=self._tools_replace_device,
+            get_space_path=self._device_space_path,
+            get_device_gas=self._device_gas,
         )
 
         self._panels = [
@@ -291,6 +299,15 @@ class ProjectPlugin:
     def _on_clone_device(self, device: "Device") -> None:
         self._api.project.clone_device(device.node_id)
 
+    def _on_delete_device(self, device: "Device") -> None:
+        node_id = device.node_id
+        was_selected = self._selected_node_id() == node_id or (
+            node_id in self._api.project.selected_node_ids
+        )
+        self._api.project.remove_device(node_id)
+        if was_selected:
+            self._api.project.set_multi_selection(None, [])
+
     def _on_create_area(self, area_number: int, name: str) -> None:
         self._api.project.create_area(area_number, name)
 
@@ -364,16 +381,51 @@ class ProjectPlugin:
 
         return walk(self._api.project.get_space_tree()) or ""
 
+    def _device_space_path(self, node_id: int) -> str:
+        """Full 'Building / Floor / Room' path of the space containing ``node_id``, or "" if none."""
+
+        def walk(spaces: list[Any], trail: list[str]) -> str | None:
+            for space in spaces:
+                here = [*trail, space.name]
+                if any(d.id == node_id for d in space.devices):
+                    return " / ".join(here)
+                hit = walk(space.children, here)
+                if hit:
+                    return hit
+            return None
+
+        return walk(self._api.project.get_space_tree(), []) or ""
+
+    def _device_gas(self, device: "Device") -> list[str]:
+        """Every group address a device links, as 'address name' strings (deduplicated, in order)."""
+        seen: set[str] = set()
+        result: list[str] = []
+        for co in device.com_objects:
+            if co.db_id is None:
+                continue
+            for assignment in self._api.project.get_links_for_com_object(co.db_id):
+                ga = self._api.project.get_group_address(assignment.group_address_id)
+                if ga is None:
+                    continue
+                text = f"{ga.address} {ga.name}".strip()
+                if text and text not in seen:
+                    seen.add(text)
+                    result.append(text)
+        return result
+
     def _suggest_ga_for_object(
         self, device: "Device", com_object: Any
     ) -> tuple[str, str]:
         """Recommendation for a new group address for ``com_object``: the next free address and a
-        name combining the device's room, the object/channel name and its function, e.g.
-        "Flur TW 1 Switch" (each part included only when present and not already covered)."""
+        name combining the device's room, a device identifier, the object/channel name and its
+        function, e.g. "Flur - Taster - TW 1 - Switch" (each part included only when present and
+        not already covered). The device identifier keeps names unique when several devices with
+        the same objects share a room: it prefers the device description, then its short name."""
         address = self._api.project.next_free_group_address() or ""
         parts: list[str] = []
         for token in (
             self._device_room(device),
+            self._device_ga_token(device),
             com_object.name or "",
             getattr(com_object, "function_text", "") or "",
         ):
@@ -381,6 +433,20 @@ class ProjectPlugin:
             if token and token not in parts:
                 parts.append(token)
         return address, " - ".join(parts)
+
+    def _device_ga_token(self, device: "Device") -> str:
+        """Identifier of ``device`` for a group-address name: its description if set, otherwise the
+        short name (custom/app name, falling back to product or hardware name)."""
+        info = self._api.project.get_device_info(device.node_id)
+        candidates = (
+            (info.description, info.name, info.product_name, info.hardware_name)
+            if info is not None
+            else (device.name,)
+        )
+        for candidate in candidates:
+            if candidate and candidate.strip():
+                return candidate.strip()
+        return ""
 
     def _next_free_sub(self, main: int, middle: int) -> int:
         """First free sub-group (0..255) within a 3-level main/middle block, so entering "2/1"
@@ -467,6 +533,14 @@ class ProjectPlugin:
         """DESTRUCTIVE: master-reset the device (factory reset etc.) over the bus."""
         self._api.connection.master_reset_device(device, erase_code)
 
+    def _render_dali_tab(self, device: "Device") -> None:
+        """Render the DALI commissioning tab body (MDT DALI devices), passing bus-connected state."""
+        self._dali_panel.render(device, connected=self._api.connection.xknx is not None)
+
+    def _run_dali(self, device: "Device", op: "Any") -> bool:
+        """Start a DALI commissioning coroutine over the bus; True if it was accepted (bus free)."""
+        return self._api.connection.run_dali(device, op) is not None
+
     def _read_device_info(self, device: "Device") -> None:
         """Kick off a read-only read of the device's general info over the bus. The result is stored
         (thread-safe) for the Configure panel to display when it arrives."""
@@ -532,11 +606,13 @@ class ProjectPlugin:
     ) -> None:
         """Create a group address for each selected com-object and link it as the sending address —
         the bulk 'create group addresses' flow. ``name_template`` supports ``{object}``,
-        ``{device}``, ``{n}``; ``start_address`` (optional) seeds sequential addressing, else each
-        gets the next free address."""
+        ``{device}``, ``{room}``, ``{function}``, ``{number}``, ``{dpt}`` and ``{n}`` (batch index,
+        1-based; ``{n:02}`` zero-pads); ``start_address`` (optional) seeds sequential addressing,
+        else each gets the next free address."""
         from xknxeditor.proj.core.addressing import format_ga, parse_ga
 
         style = self._api.project.group_address_style
+        room = self._device_room(device)
         base: int | None = None
         if start_address:
             try:
@@ -553,9 +629,15 @@ class ProjectPlugin:
                 continue
             try:
                 name = (name_template or "{object}").format(
-                    object=co.name, device=device.name, n=i + 1
+                    object=co.name,
+                    device=device.name,
+                    room=room,
+                    function=getattr(co, "function_text", "") or "",
+                    number=co.number,
+                    dpt=getattr(co.dpt, "name", "") or "",
+                    n=i + 1,
                 )
-            except (KeyError, IndexError):
+            except (KeyError, IndexError, ValueError):
                 name = co.name or f"{device.name} {co.number}"
             address = format_ga(base + i, style) if base is not None else None
             ga_id = self._api.project.create_group_address(address, name)
@@ -868,6 +950,16 @@ class ProjectPlugin:
         if old_name != new_name:
             device.name = new_name
             self._api.project.set_device_name(device.node_id, old_name, new_name)
+
+    def _handle_description_change(
+        self, device: "Device", new_description: str
+    ) -> None:
+        old_description = device.description
+        if old_description != new_description:
+            device.description = new_description
+            self._api.project.set_device_description(
+                device.node_id, old_description, new_description
+            )
 
     def _handle_flag_change(
         self, device: "Device", co_id: str, flag_name: str, new_value: bool

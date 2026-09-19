@@ -119,7 +119,7 @@ def _project_with_module_and_binary(tmp_path: Path) -> Path:
     src = tmp_path / "src.xknx"
     svc = ProjectService()
     pid = svc.create(src, "P-BM")
-    seg = svc.create_line(pid, svc.create_area(pid, 0, 1, "A"), 1, "L")
+    seg = svc.create_line(pid, svc.create_area(pid, 0, 2, "A"), 1, "L")
     segment_id = next(
         line.segments[0].id
         for area in svc.topology(pid, 0).areas
@@ -169,7 +169,8 @@ def test_export_emits_external_binary_data_and_signs_it(tmp_path: Path) -> None:
         # ETS id form: {DeviceInstanceId}_{encoded Name}; '-' -> '.2D'. No inline <Data>.
         expected_id = f"{pid}-0_DI-1_DaliGC16.2DBackup.2DStore"
         assert 'Name="DaliGC16-Backup-Store"' in xml
-        assert 'DoNotCopy="false"' in xml
+        # project/20 spells the copy flag "AutoCopy" (ETS treats it as DoNotCopy); /23 uses DoNotCopy.
+        assert 'AutoCopy="false"' in xml
         assert "<Data>" not in xml
         dat = f"{pid}/BinaryData/{expected_id}.dat"
         assert dat in names

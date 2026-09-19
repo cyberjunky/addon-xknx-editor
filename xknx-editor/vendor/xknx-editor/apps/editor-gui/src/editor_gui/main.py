@@ -21,6 +21,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from xknxproject.exceptions import InvalidPasswordException, XknxProjectException
 
 from editor_gui import __version__
+from editor_gui import signing_key as signing_key_store
+from editor_gui import trace_key as trace_key_store
 from editor_gui.certs import ensure_ca_bundle
 from editor_gui.concurrency import MainThreadExecutor
 from editor_gui.master_data import MasterDataInfo, load_master, master_xml_bytes
@@ -38,6 +40,7 @@ from editor_gui.plugins.network import NetworkPlugin
 from editor_gui.plugins.project import ProjectPlugin, ProjectService
 from editor_gui.plugins.project.knxproj_manufacturer import collect_manufacturer_bundle
 from editor_gui.plugins.recover import RecoverPlugin
+from editor_gui.plugins.signing import SigningPlugin
 from editor_gui.plugins.timeline import TimelinePlugin
 from editor_gui.plugins.topology import TopologyPlugin
 from editor_gui.settings import config_dir, load_settings, save_settings
@@ -46,10 +49,15 @@ from editor_gui.update_check import UpdateInfo, check_for_update
 from xknxeditor.prod.errors import ArchiveError
 from xknxeditor.proj import (
     MyKnxError,
+    ProjectStorageError,
     export_knxproj,
     fetch_myknx_products,
     myknx_certificate_signer,
+    signing_key_is_placeholder,
 )
+from xknxeditor.proj.core import import_notes
+from xknxeditor.proj.core.import_notes import ImportLoss
+from xknxeditor.proj.db import frame_db_profiler
 
 _REPO_URL = "https://github.com/knx-ai/xknx-editor"
 # Direct download of the Windows "compat" build (bundled Mesa software OpenGL, pure CPU) — the one that
@@ -136,6 +144,27 @@ def _download_bytes(
     return data
 
 
+def _myknx_product_name(product: dict[str, object], pid: str) -> str:
+    """Best-effort human-readable name for a MyKnx product/license, else the id.
+
+    The exact field name depends on the account's products, so try the known keys first and then
+    any string-valued field whose key looks like a name/description (case-insensitive) and differs
+    from the id. Returns ``pid`` when nothing usable is found (the caller renders the id alone)."""
+    for key in ("name", "productName", "productType", "product_type", "description"):
+        value = product.get(key)
+        if isinstance(value, str) and value.strip() and value != pid:
+            return value
+    for key, value in product.items():
+        if (
+            ("name" in key.lower() or "description" in key.lower())
+            and isinstance(value, str)
+            and value.strip()
+            and value != pid
+        ):
+            return value
+    return pid
+
+
 class KnxGuiApp:
     def __init__(self, catalog_path: Path) -> None:
         self._catalog_service_path = catalog_path
@@ -158,7 +187,7 @@ class KnxGuiApp:
         self._myknx_password = os.environ.get("MYKNX_PASSWORD", "")
         # After login we fetch the account's licenses so the user picks one instead of typing an
         # opaque product id. None = not logged in yet; [] = logged in but no licenses.
-        self._myknx_products: list[tuple[str, str]] | None = None
+        self._myknx_products: list[tuple[str, str, bool]] | None = None
         self._myknx_selected_pid = os.environ.get("MYKNX_PRODUCT_ID", "")
         self._myknx_login_thread: threading.Thread | None = None
         self._myknx_login_error = ""
@@ -167,6 +196,11 @@ class KnxGuiApp:
         self._password_prompt_requested = False
         self._import_password = ""
         self._import_password_error: str | None = None
+        # Network-drive consent: when opening/importing to a location SQLite can't use (SMB/NFS), we
+        # ask before working on a local copy. `_action` runs on "Use local copy"; `_home` is shown.
+        self._network_consent_requested = False
+        self._network_consent_home: str | None = None
+        self._network_consent_action: Callable[[], None] | None = None
         # "Load product from URL" prompt (imports a .knxprod / OpenKNX release / product XML).
         self._url_prompt_requested = False
         self._url_input = ""
@@ -198,6 +232,14 @@ class KnxGuiApp:
         self._toast_seen_ts = time.time()
         # Set by the export worker on success; the toast renderer turns it into a green toast.
         self._export_success_msg: str | None = None
+        # Lossy-import notes to show in a readable modal (set after a lossy import or before an
+        # export that echoes them); rendered by _render_import_notes_modal.
+        self._import_notes: list[ImportLoss] = []
+        self._import_notes_intro: str = ""
+        self._import_notes_requested = False
+        # Set by the open/import worker when a network project is mirrored locally; the toast
+        # renderer turns it into an info toast on the UI thread.
+        self._mirror_notice: str | None = None
         self._welcome_dismissed = False  # user closed the welcome card this session
         self._about_requested = False
         # GitHub update check (best-effort, off the UI thread; see update_check.py).
@@ -249,6 +291,7 @@ class KnxGuiApp:
         self._keyring_plugin = KeyringPlugin(self._plugin_api)
         # Data Secure: let programming/testing look up a device's tool key from the loaded keyring.
         self._connection_service.keyring = self._keyring_plugin.service
+        self._signing_plugin = SigningPlugin(self._plugin_api)
         self._recover_plugin = RecoverPlugin(self._plugin_api)
         self._health_plugin = HealthPlugin(self._plugin_api)
         self._cockpit_plugin = CockpitPlugin(self._plugin_api)
@@ -281,6 +324,7 @@ class KnxGuiApp:
             self._network_plugin,
             self._monitor_plugin,
             self._keyring_plugin,
+            self._signing_plugin,
             self._recover_plugin,
             self._project_plugin,
             self._cockpit_plugin,
@@ -292,6 +336,12 @@ class KnxGuiApp:
 
     def setup(self) -> None:
         self._log.info("editor started")
+        # Apply a previously extracted/saved signing key so exports are signed with it.
+        if signing_key_store.apply_cached_key():
+            self._log.info("signing key loaded")
+        # Apply a previously extracted project-log (trace) key so comments decrypt on open.
+        if trace_key_store.apply_cached_key():
+            self._log.info("trace key loaded")
         # Discover KNX gateways at startup and auto-connect to the last-used (or first) one.
         self._connection_plugin.autostart()
         # Best-effort check for a newer release on GitHub (unless the user disabled it).
@@ -423,7 +473,9 @@ class KnxGuiApp:
         When ``signer`` is given (the MyKnx certificate signer), the export also requests a project
         certificate and embeds it. Runs off the UI thread because signing does blocking network I/O.
         """
-        source = self._project_service.path
+        # Export READS the SQLite file, so use the working copy — for a network project the home
+        # file is only current after a write-back, and reading it directly could be stale or fail.
+        source = self._project_service.working_path
         if source is None or (self._myknx_thread and self._myknx_thread.is_alive()):
             return
         # Snapshot the program refs now (UI thread) together with `source`, so switching projects
@@ -487,6 +539,12 @@ class KnxGuiApp:
                     size=_human_size(size),
                     schema=labels.get(used_schema, f"project/{used_schema}"),
                 )
+                if result.import_notes:
+                    # Remind the user what the source .knxproj carried that this export omits. Set
+                    # state here (worker thread); the modal opens on the next UI frame via the flag.
+                    self._import_notes = result.import_notes
+                    self._import_notes_intro = S.IMPORT_NOTES_INTRO_EXPORT
+                    self._import_notes_requested = True
                 self._log.info(
                     "project exported", path=dest, certificate=signer is not None
                 )
@@ -549,22 +607,40 @@ class KnxGuiApp:
             self._myknx_login_error = str(e)
             self._myknx_products = []
             return
-        items: list[tuple[str, str]] = []
+        items: list[tuple[str, str, bool]] = []
+        if products:
+            # The label falls back to the raw id when no name field is recognized; log the actual
+            # keys once so an unrecognized schema can be mapped without a live capture.
+            self._log.info(
+                "myknx products", count=len(products), keys=sorted(products[0])
+            )
         for p in products:
             pid = str(p.get("id") or p.get("productId") or "")
             if not pid:
                 continue
-            name = str(
-                p.get("name")
-                or p.get("productName")
-                or p.get("productType")
-                or p.get("product_type")
-                or pid
+            name = _myknx_product_name(p, pid)
+            lic = str(p.get("licenseNumber") or "")
+            # A product has no unique name (several share a product-type name), so pair the name
+            # with the license number; fall back to the raw id when neither is available.
+            label = (
+                "  -  ".join(x for x in (name if name != pid else "", lic) if x) or pid
             )
-            items.append((pid, f"{name}  ({pid})"))
+            # Only cloud-capable, non-expired licenses can produce an online certificate (ETS's own
+            # filter). The others stay visible but disabled, with the reason appended to the label.
+            expired = bool(p.get("isExpired"))
+            cloud = bool(p.get("cloud_capable"))
+            enabled = cloud and not expired
+            if not enabled:
+                reason = S.MYKNX_SIGN_EXPIRED if expired else S.MYKNX_SIGN_NO_CLOUD
+                label = f"{label}  ({reason})"
+            items.append((pid, label, enabled))
         self._myknx_products = items
-        if items and self._myknx_selected_pid not in {pid for pid, _ in items}:
-            self._myknx_selected_pid = items[0][0]
+        enabled_pids = {pid for pid, _, enabled in items if enabled}
+        if self._myknx_selected_pid not in enabled_pids:
+            # Prefer the first signable license; leave empty (Sign disabled) when none qualifies.
+            self._myknx_selected_pid = (
+                next(iter(enabled_pids), "") if enabled_pids else ""
+            )
 
     def _render_myknx_sign_modal(self) -> None:
         """After the save dialog, ask whether to also sign the export with a MyKnx certificate.
@@ -632,6 +708,14 @@ class KnxGuiApp:
         if imgui.button(S.MYKNX_DONGLE_BUTTON, imgui.ImVec2(-1, 0)):
             imgui.open_popup(S.MYKNX_DONGLE_TITLE)
         self._render_dongle_modal()
+        # Folder-signing key: open a child modal (stacks on top; closing returns to the export dialog).
+        if signing_key_is_placeholder():
+            imgui.text_colored(
+                imgui.ImVec4(0.85, 0.7, 0.3, 1.0), S.SIGNING_KEY_PLACEHOLDER_HINT
+            )
+        if imgui.button(S.SIGNING_KEY_BUTTON, imgui.ImVec2(-1, 0)):
+            imgui.open_popup(S.SIGNING_KEY_TITLE)
+        self._render_signing_key_modal()
         imgui.spacing()
 
         can_sign = bool(selected_pid) and not logging_in
@@ -689,23 +773,34 @@ class KnxGuiApp:
         current = next(
             (
                 lbl
-                for pid, lbl in self._myknx_products
+                for pid, lbl, _enabled in self._myknx_products
                 if pid == self._myknx_selected_pid
             ),
             self._myknx_products[0][1],
         )
         imgui.set_next_item_width(-1)
         if imgui.begin_combo("##myknx_license", current):
-            for pid, lbl in self._myknx_products:
-                if imgui.selectable(lbl, pid == self._myknx_selected_pid)[0]:
+            for pid, lbl, enabled in self._myknx_products:
+                # Non-cloud/expired licenses stay visible but greyed out and unselectable, so the
+                # user sees the whole account and why a license cannot sign online.
+                if not enabled:
+                    imgui.begin_disabled()
+                    imgui.selectable(lbl, False)
+                    imgui.end_disabled()
+                elif imgui.selectable(lbl, pid == self._myknx_selected_pid)[0]:
                     self._myknx_selected_pid = pid
             imgui.end_combo()
+        if not any(enabled for _pid, _lbl, enabled in self._myknx_products):
+            imgui.push_style_color(imgui.Col_.text, imgui.ImVec4(0.85, 0.7, 0.3, 1.0))
+            imgui.text_wrapped(S.MYKNX_SIGN_NO_CLOUD_HINT)
+            imgui.pop_style_color()
         return self._myknx_selected_pid
 
     def _do_import_knxproj(self, source: str, dest: str) -> None:
         self._import_knxproj_source = source
         self._import_knxproj_dest = dest
-        self._start_import(None)
+        # A network destination asks for consent (work on a local copy) before the import runs.
+        self._maybe_consent_then(dest, lambda: self._start_import(None))
 
     def _start_import(self, password: str | None) -> None:
         """Run the import on a worker thread so the UI stays responsive (the facade holds the shared
@@ -742,6 +837,9 @@ class KnxGuiApp:
             self._password_prompt_requested = True
         else:
             self._clear_import_prompt()
+            if self._import_notes:
+                self._import_notes_intro = S.IMPORT_NOTES_INTRO_IMPORT
+                self._import_notes_requested = True
 
     def _begin_progress(self, text: str) -> None:
         self._progress_text = text
@@ -823,14 +921,24 @@ class KnxGuiApp:
             )
 
         self._project_service.build_progress = report
+        self._import_notes = []
         try:
             self._project_service.import_knxproj(
                 Path(source), Path(dest), password=password
             )
             # Import opens the freshly built .xknx; record it in Open Recent like a normal open.
             self._add_recent(dest)
+            # Lossy-import notes detected during the build; _poll_import raises the readable modal on
+            # the UI thread when this is non-empty (setting state here is thread-safe; imgui is not).
+            self._import_notes = self._project_service.get_import_notes()
+            if self._project_service.mirroring_active:
+                self._mirror_notice = str(self._project_service.mirror_home)
         except InvalidPasswordException:
             return True
+        except ProjectStorageError as e:
+            # A location that can't host the SQLite project (network share, read-only). The toast
+            # system surfaces this error record; keep the text short and actionable.
+            self._log.error("Cannot save the project here", source=source, error=str(e))
         except XknxProjectException as e:
             self._log.error("knxproj import failed", source=source, error=str(e))
         except Exception as e:
@@ -873,6 +981,42 @@ class KnxGuiApp:
             self._start_import(self._import_password)
         elif cancel:
             self._clear_import_prompt()
+            imgui.close_current_popup()
+        imgui.end_popup()
+
+    def _maybe_consent_then(self, home: str, action: Callable[[], None]) -> None:
+        """Run ``action`` now, or — if ``home`` is a location SQLite can't use (network share) —
+        ask the user first and run it only on consent. The mirroring itself happens in the facade."""
+        if self._project_service.location_needs_local_copy(Path(home)):
+            self._network_consent_home = home
+            self._network_consent_action = action
+            self._network_consent_requested = True
+        else:
+            action()
+
+    def _render_network_consent_modal(self) -> None:
+        if self._network_consent_requested:
+            imgui.open_popup(S.NETWORK_CONSENT_TITLE)
+            self._network_consent_requested = False
+        imgui.set_next_window_size(imgui.ImVec2(460.0, 0.0), imgui.Cond_.always)
+        if not imgui.begin_popup_modal(S.NETWORK_CONSENT_TITLE, None)[0]:
+            return
+        imgui.text_wrapped(
+            S.NETWORK_CONSENT_PROMPT.format(home=self._network_consent_home or "")
+        )
+        imgui.spacing()
+        use_local = imgui.button(S.NETWORK_CONSENT_USE_LOCAL)
+        imgui.same_line()
+        cancel = imgui.button(S.BTN_CANCEL)
+        if use_local:
+            action = self._network_consent_action
+            self._network_consent_action = None
+            imgui.close_current_popup()
+            if action is not None:
+                action()
+        elif cancel:
+            self._network_consent_action = None
+            self._clear_import_prompt()  # harmless when opening (import fields are None)
             imgui.close_current_popup()
         imgui.end_popup()
 
@@ -972,8 +1116,9 @@ class KnxGuiApp:
 
         # A recent entry (or a startup default) may point at a file that was moved or deleted. Report
         # it clearly (a red toast via the error log) and drop it from the recent list, instead of
-        # failing later on the opaque SQLite "unable to open database file" error.
-        if not Path(path).is_file():
+        # failing later on the opaque SQLite "unable to open database file" error. can_open() also
+        # accepts a network home whose file is missing but has a local mirror (crash recovery).
+        if not self._project_service.can_open(Path(path)):
             self._log.error("project file no longer exists", path=path)
             self._remove_recent(path)
             return
@@ -990,6 +1135,11 @@ class KnxGuiApp:
             try:
                 self._project_service.open(Path(path))
                 self._add_recent(path)
+                if self._project_service.mirroring_active:
+                    self._mirror_notice = str(self._project_service.mirror_home)
+            except ProjectStorageError as e:
+                # The file lives somewhere SQLite can't operate (network share, read-only dir).
+                self._log.error("Cannot open the project here", path=path, error=str(e))
             except (ValueError, SQLAlchemyError) as e:
                 # A missing/stale/corrupt file must not take down the app (e.g. the demo project
                 # opened at startup, or a bad file picked via "Open Project").
@@ -998,7 +1148,10 @@ class KnxGuiApp:
                 self._project_service.build_progress = None
 
         # Open on a worker thread behind the spinner: building a large project's device view is slow.
-        self._run_bg(S.PROGRESS_OPEN_PROJECT, worker)
+        # A network location asks for consent first (work on a local copy), then runs the worker.
+        self._maybe_consent_then(
+            path, lambda: self._run_bg(S.PROGRESS_OPEN_PROJECT, worker)
+        )
 
     def _prompt_import_dest(self, source: str) -> None:
         """Remember the .knxproj source and ask where to save the imported .xknx project."""
@@ -1225,8 +1378,13 @@ class KnxGuiApp:
             recent = self._recent_files()
             if imgui.begin_menu(S.MENU_OPEN_RECENT, bool(recent)):
                 for path in recent:
-                    if imgui.menu_item(Path(path).name, "", False)[0]:
+                    # Append the full path as a hidden id part: two recents can share a filename
+                    # (e.g. the same project on a share and locally), and a bare label would give
+                    # them the same imgui ID ("conflicting ID" warning, see _render_welcome).
+                    if imgui.menu_item(f"{Path(path).name}##{path}", "", False)[0]:
                         self._do_open_project(path)
+                    if imgui.is_item_hovered():
+                        imgui.set_tooltip(path)
                 imgui.end_menu()
             if imgui.menu_item(
                 S.MENU_SAVE_AS, "", False, self._project_service.is_open
@@ -1275,6 +1433,7 @@ class KnxGuiApp:
         self._connection_plugin.render_menu()
         self._render_mcp_menu()
         self._keyring_plugin.render_menu()
+        self._signing_plugin.render_menu()
         self._recover_plugin.render_menu()
 
         self._render_language_menu()
@@ -1389,6 +1548,54 @@ class KnxGuiApp:
             imgui.close_current_popup()
         imgui.end_popup()
 
+    def _import_note_text(self, note: ImportLoss) -> str:
+        """Localized, human-readable line for one import-loss note (code -> message)."""
+        template = {
+            import_notes.MULTIPLE_INSTALLATIONS: S.IMPORT_NOTE_MULTIPLE_INSTALLATIONS,
+            import_notes.UNASSIGNED_DEVICES: S.IMPORT_NOTE_UNASSIGNED_DEVICES,
+            import_notes.COM_OBJECT_TEXT_OVERRIDES: S.IMPORT_NOTE_COM_OBJECT_TEXT_OVERRIDES,
+            import_notes.IP_CONFIG: S.IMPORT_NOTE_IP_CONFIG,
+            import_notes.MULTI_SEGMENT: S.IMPORT_NOTE_MULTI_SEGMENT,
+            import_notes.DROPPED_DUPLICATE_LINES: S.IMPORT_NOTE_DROPPED_DUPLICATE_LINES,
+        }.get(note.code)
+        if template is None:
+            # Unknown code (forward-compat): fall back to the raw code + count so nothing is hidden.
+            return f"{note.code} ({note.count})"
+        text = template.format(count=note.count)
+        if note.detail:
+            return f"{text} {S.IMPORT_NOTE_EXAMPLES.format(examples=note.detail)}"
+        return text
+
+    def _render_import_notes_modal(self) -> None:
+        if self._import_notes_requested:
+            imgui.open_popup(S.IMPORT_NOTES_TITLE)
+            self._import_notes_requested = False
+        imgui.set_next_window_size_constraints(
+            imgui.ImVec2(520.0, 0.0), imgui.ImVec2(1.0e9, 1.0e9)
+        )
+        if not imgui.begin_popup_modal(
+            S.IMPORT_NOTES_TITLE, None, imgui.WindowFlags_.always_auto_resize
+        )[0]:
+            return
+        if self._import_notes_intro:
+            imgui.text_wrapped(self._import_notes_intro)
+            imgui.spacing()
+        for note in self._import_notes:
+            imgui.bullet()
+            imgui.text_wrapped(self._import_note_text(note))
+        imgui.spacing()
+        imgui.separator()
+        if imgui.button(S.IMPORT_NOTES_CLOSE, imgui.ImVec2(120, 0)):
+            imgui.close_current_popup()
+        imgui.end_popup()
+
+    def watch_db_frame(self) -> None:
+        """Dev watchdog (XKNX_DEBUG_DB_FRAMES=1): log when the render thread keeps issuing DB queries
+        across frames in which the project did not change — an uncached per-frame read in a panel."""
+        msg = frame_db_profiler.end_frame(self._project_service.revision)
+        if msg:
+            self._log.warning(msg)
+
     def render_overlays(self) -> None:
         # Bring the Editor tab to the front when another view (Device Overview, Topology, Health)
         # selected a device. Consumed here (a per-frame global callback) rather than in the Editor
@@ -1404,11 +1611,14 @@ class KnxGuiApp:
         self._project_plugin.render_overlays()
         self._render_progress_modal()
         self._render_import_password_modal()
+        self._render_network_consent_modal()
         self._render_url_prompt_modal()
         self._render_myknx_sign_modal()
         self._render_about_modal()
         self._render_update_modal()
+        self._render_import_notes_modal()
         self._keyring_plugin.render_window()
+        self._signing_plugin.render_window()
         self._render_welcome()
         # Programming queue: advance it every frame (robust wakeup even if the bus was freed by a
         # non-queue op), and while devices wait behind the running one show the queue window instead
@@ -1503,6 +1713,24 @@ class KnxGuiApp:
             imgui.close_current_popup()
         imgui.end_popup()
 
+    def _render_signing_key_modal(self) -> None:
+        """Signing-key manager as a child modal of the export dialog (view/edit/save/extract).
+
+        Rendered inside the export modal's scope so it stacks on top; closing it returns to the
+        export dialog without cancelling the export."""
+        center = imgui.get_main_viewport().get_center()
+        imgui.set_next_window_pos(center, imgui.Cond_.appearing, imgui.ImVec2(0.5, 0.5))
+        imgui.set_next_window_size(
+            hello_imgui.em_to_vec2(40.0, 0.0), imgui.Cond_.appearing
+        )
+        if not imgui.begin_popup_modal(S.SIGNING_KEY_TITLE, None)[0]:
+            return
+        self._signing_plugin.render_contents()
+        imgui.spacing()
+        if imgui.button(S.SIGNING_KEY_CLOSE, imgui.ImVec2(-1, 0)):
+            imgui.close_current_popup()
+        imgui.end_popup()
+
     def _palette_items(self) -> list[tuple[str, Callable[[], None]]]:
         """(label, action) pairs the command palette can jump to: global actions + devices."""
         items: list[tuple[str, Callable[[], None]]] = [
@@ -1582,6 +1810,15 @@ class KnxGuiApp:
         if self._export_success_msg is not None:
             self._toasts.append((self._export_success_msg, "success", now + 10.0))
             self._export_success_msg = None
+        if self._mirror_notice is not None:
+            self._toasts.append(
+                (
+                    S.MIRROR_NOTICE.format(home=self._mirror_notice),
+                    "success",
+                    now + 10.0,
+                )
+            )
+            self._mirror_notice = None
         for rec in self._log_service.get_records():
             if rec.timestamp <= self._toast_seen_ts:
                 continue
@@ -1839,8 +2076,14 @@ class KnxGuiApp:
                 imgui.separator()
                 imgui.text_disabled(S.WELCOME_RECENT)
                 for path in recent:
-                    if imgui.selectable(Path(path).name, False)[0]:
+                    # Append the full path as a hidden id part: two recents can share a filename
+                    # (e.g. the same project on a share and locally), and a bare label would give
+                    # them the same imgui ID ("conflicting ID" warning). Show the full path on hover
+                    # so identically-named entries are distinguishable.
+                    if imgui.selectable(f"{Path(path).name}##{path}", False)[0]:
                         self._do_open_project(path)
+                    if imgui.is_item_hovered():
+                        imgui.set_tooltip(path)
             imgui.spacing()
             if imgui.button(S.WELCOME_CLOSE, imgui.ImVec2(-1, 0)):
                 still_open = False
@@ -2158,6 +2401,13 @@ def _main() -> None:
     runner_params.callbacks.post_init = app.setup
     runner_params.callbacks.before_exit = app.shutdown
     runner_params.callbacks.post_render_dockable_windows = app.render_overlays
+
+    # Dev watchdog for uncached per-frame DB reads (set XKNX_DEBUG_DB_FRAMES=1): once per frame it
+    # compares the render-thread query count against the project revision and logs a warning if
+    # queries keep firing while nothing changed — the signature of a panel render() that reads the DB
+    # without revision caching (see the revision-cached reads in ProjectService). No cost when off.
+    if frame_db_profiler.enabled:
+        runner_params.callbacks.pre_new_frame = app.watch_db_frame
 
     # Renderer backend: default is OpenGL3. In a VM (UTM/QEMU) or on Windows-on-ARM there is no
     # working OpenGL, but Windows always has a Direct3D software rasterizer (WARP). XKNX_RENDERER

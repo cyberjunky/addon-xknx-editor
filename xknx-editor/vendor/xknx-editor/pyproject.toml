@@ -12,6 +12,7 @@ dependencies = [
     "xknxeditor-datasecure",
     "xknxeditor-catalog",
     "xknxeditor-download",
+    "xknxeditor-dali",
     "xknxeditor-recover",
     # The GUI app is a workspace member too; depend on it so a plain `uv sync` installs the whole
     # thing (incl. imgui-bundle) — testpaths runs its tests, so `uv sync` must provide its deps.
@@ -44,6 +45,7 @@ xknxeditor-datasecure = { workspace = true }
 xknxeditor-gui = { workspace = true }
 xknxeditor-catalog = { workspace = true }
 xknxeditor-download = { workspace = true }
+xknxeditor-dali = { workspace = true }
 xknxeditor-recover = { workspace = true }
 # Keep-link-less-com-objects (PR #634) is merged on upstream main but not yet in a
 # PyPI release; pin to the merge commit until a release >= 3.11 ships, then drop this.

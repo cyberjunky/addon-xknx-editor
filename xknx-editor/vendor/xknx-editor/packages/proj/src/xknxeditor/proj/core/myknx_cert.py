@@ -1,25 +1,20 @@
 """Pure-Python, Windows-independent MyKnx cloud client to obtain a project certificate.
 
-Requests a project certificate (``{pid}.certificate``) from macOS/Linux without ETS or a dongle,
-using the user's *own* MyKnx account (legitimate use of the user's license). Verified against the
-live MyKnx cloud API.
+Requests a project certificate (``{pid}.certificate``) using the user's own MyKnx account.
 
 Protocol:
-  * Auth: ``POST /v1/user/login?username=&password=`` with the user's own credentials, yielding
-    ``X-Session-ID`` + ``X-Next-OT-Token``.
-  * API server ``https://openapi.knx.org/v1`` (plain JSON over TLS). Every authed request sends
-    ``X-Session-ID`` + ``X-OT-Token`` (the current one-time token); the response returns the next
-    ``X-Next-OT-Token``.
-  * Certificate is workset-scoped and server-signed (no local key):
+  * Auth: ``POST /v1/user/login?username=&password=`` -> ``X-Session-ID`` + ``X-Next-OT-Token``.
+  * API ``https://openapi.knx.org/v1`` (JSON over TLS). Authed requests send ``X-Session-ID`` +
+    ``X-OT-Token``; the response returns the next ``X-Next-OT-Token``.
+  * Certificate is workset-scoped and server-signed:
     ``POST /v1/workset`` -> ``.../claim`` -> ``.../product/{productId}``
     -> ``.../product/{productId}/certificate`` (body ``{"projectHash", "projectName"}``) -> ``.../release``.
-  * REQUIRES a cloud-enabled ETS product license; a non-ETS product fails the add-product step with
-    HTTP 422 ("Encryption \"cloud\" is not enabled ...")
+  * Requires a cloud-enabled product license; others fail add-product with HTTP 422.
 """
 
 from __future__ import annotations
 
-import hashlib
+import email.message
 import io
 import json
 import logging
@@ -76,46 +71,33 @@ def _server_detail(resp: bytes) -> str:
 
 
 def project_hash(folder_signature: bytes) -> str:
-    """Return the ``projectHash`` sent to the certificate endpoint.
+    """Return the ``projectHash`` for the certificate endpoint.
 
-    UNVERIFIED: implemented as ``sha256(folder_signature)`` hex, where ``folder_signature`` is the
-    base64 content of the project's ``{pid}.signature`` (the converter-key directory signature over
-    ``project.xml`` + ``0.xml``). The certificate binds to that signature, so hashing it is the
-    most likely input -- confirm against a real request. A leading
-    UTF-8 BOM (as written into the ``.signature`` file) is stripped so both call paths hash the
-    same bytes.
+    It is the base64 ``{pid}.signature`` content sent verbatim as UTF-8 -- not hashed. The server
+    derives the digest itself. A leading UTF-8 BOM is stripped.
     """
     if folder_signature.startswith(b"\xef\xbb\xbf"):
         folder_signature = folder_signature[3:]
-    return hashlib.sha256(folder_signature).hexdigest()
+    return folder_signature.decode("utf-8")
 
 
 def certificate_name(pid: str) -> str:
-    """Return the ``projectName`` to send to the certificate endpoint.
+    """Return the ``projectName`` to send: ``{pid}.certificate``.
 
-    The server echoes ``projectName`` verbatim into the certificate's ``CERT KNX:"..."`` header,
-    and ETS expects that header to name the certificate *file* -- genuine ETS archives carry
-    ``CERT KNX:"P-0532.certificate"``. Sending the human-readable project name instead yields a
-    cryptographically valid certificate bound to the wrong name, which ETS refuses with "The
-    project has not been certified with a valid ETS license".
+    The server echoes it into the certificate's ``CERT KNX:"..."`` header, which must name the
+    certificate file. A different name yields a valid certificate bound to the wrong name.
     """
     return f"{pid}.certificate"
 
 
 def normalize_certificate(text: str) -> bytes:
-    """Return certificate text as ETS writes it: CRLF line endings, ending in a blank line.
+    """Return certificate text with CRLF line endings and a blank line at the end.
 
-    The API hands back LF-separated text; genuine ETS archives store CRLF throughout (verified
-    against a real ``.validation``). Normalising here keeps ``{pid}.certificate`` byte-identical
-    to the ETS form.
-
-    The member ends with ``\\r\\n\\r\\n`` — the content, then a blank line. A genuine ETS
-    ``.certificate`` measures 485 bytes where stripping to a single CRLF gives 483, which left the
-    archive self-contradictory: the ``certificate:`` block inlined in ``.validation`` did carry the
-    blank line, so the two copies of the same certificate disagreed by two bytes (upstream issue
-    #16, diffed against a real ETS6 archive). ``.validation`` itself is unaffected either way,
-    since :func:`~xknxeditor.proj.core.knxproj_export.validation_record` strips the certificate's
-    trailing newlines and adds its own separators.
+    The API returns LF text; archives store CRLF. Normalising keeps ``{pid}.certificate`` and the
+    ``.validation`` block byte-identical. A genuine certificate ends with an empty line (two CRLF,
+    485 bytes where one CRLF gives 483), and the ``certificate:`` block inlined in ``.validation``
+    carries it too, so a single CRLF leaves the archive holding two copies of the same certificate
+    that disagree by two bytes (upstream issue #16).
     """
     normalized = text.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n")
     return (normalized.replace("\n", "\r\n") + "\r\n\r\n").encode("utf-8")
@@ -136,6 +118,35 @@ def _redact_url(url: str) -> str:
     return f"{base}?<redacted>" if sep else base
 
 
+def _body_preview(body: bytes, limit: int = 2000) -> str:
+    """Return a log-safe, truncated text preview of a response body.
+
+    Response *bodies* on these endpoints carry no secrets (login returns a status string; the
+    certificate endpoint returns the certificate that is embedded in the shared ``.knxproj``), so
+    they are safe to log for user bug reports. The rotating ``X-OT-Token``/``X-Session-ID`` live in
+    *headers*, which are deliberately never logged (see :func:`_redact_url`).
+    """
+    text = body.decode("utf-8", "replace").strip()
+    return (
+        text[:limit] + f"... ({len(body)} bytes total)" if len(text) > limit else text
+    )
+
+
+def _headers_with_reason(
+    raw: email.message.Message | None, reason: str | None
+) -> dict[str, str]:
+    """Lowercase the response headers and add the HTTP status reason phrase.
+
+    The reason phrase (e.g. "Unauthorized") and headers like ``WWW-Authenticate`` are the only
+    error information a response carries when the body is empty, so surface them under the synthetic
+    ``x-http-reason`` key (no server sends that header) for :func:`_server_detail` fallbacks.
+    """
+    headers = {k.lower(): v for k, v in (raw.items() if raw is not None else [])}
+    if reason:
+        headers["x-http-reason"] = reason
+    return headers
+
+
 def _post(
     url: str, body: bytes, headers: dict[str, str], timeout: float
 ) -> tuple[int, dict[str, str], bytes]:
@@ -144,11 +155,24 @@ def _post(
     logger.debug("myknx POST %s (%d bytes)", safe_url, len(body))
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            logger.debug("myknx POST %s -> %d", safe_url, r.status)
-            return r.status, {k.lower(): v for k, v in r.headers.items()}, r.read()
+            resp = r.read()
+            logger.debug(
+                "myknx POST %s -> %d body=%s", safe_url, r.status, _body_preview(resp)
+            )
+            return (
+                r.status,
+                _headers_with_reason(r.headers, getattr(r, "reason", None)),
+                resp,
+            )
     except urllib.error.HTTPError as e:
-        logger.debug("myknx POST %s -> HTTPError %d", safe_url, e.code)
-        return e.code, {k.lower(): v for k, v in (e.headers or {}).items()}, e.read()
+        resp = e.read()
+        logger.debug(
+            "myknx POST %s -> HTTPError %d body=%s",
+            safe_url,
+            e.code,
+            _body_preview(resp),
+        )
+        return e.code, _headers_with_reason(e.headers, getattr(e, "reason", None)), resp
 
 
 def _get(
@@ -159,11 +183,24 @@ def _get(
     logger.debug("myknx GET %s", safe_url)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            logger.debug("myknx GET %s -> %d", safe_url, r.status)
-            return r.status, {k.lower(): v for k, v in r.headers.items()}, r.read()
+            resp = r.read()
+            logger.debug(
+                "myknx GET %s -> %d body=%s", safe_url, r.status, _body_preview(resp)
+            )
+            return (
+                r.status,
+                _headers_with_reason(r.headers, getattr(r, "reason", None)),
+                resp,
+            )
     except urllib.error.HTTPError as e:
-        logger.debug("myknx GET %s -> HTTPError %d", safe_url, e.code)
-        return e.code, {k.lower(): v for k, v in (e.headers or {}).items()}, e.read()
+        resp = e.read()
+        logger.debug(
+            "myknx GET %s -> HTTPError %d body=%s",
+            safe_url,
+            e.code,
+            _body_preview(resp),
+        )
+        return e.code, _headers_with_reason(e.headers, getattr(e, "reason", None)), resp
 
 
 def _empty_headers() -> dict[str, str]:
@@ -219,10 +256,14 @@ class MyKnxSession:
             self.timeout,
         )
         if status // 100 != 2:
-            detail = _server_detail(body)
+            detail = (
+                _server_detail(body)
+                or headers.get("www-authenticate", "")
+                or headers.get("x-http-reason", "")
+            )
             logger.error("MyKnx login failed: HTTP %s: %s", status, detail)
             raise MyKnxError(
-                f"login failed: HTTP {status}: {detail}",
+                f"HTTP {status}: {detail}" if detail else f"HTTP {status}",
                 status=status,
                 detail=detail,
                 user_message="MyKnx login failed - check your username and password.",
@@ -258,16 +299,31 @@ class MyKnxSession:
             raise RuntimeError(f"product/getAll failed: HTTP {status}: {resp[:200]!r}")
         return json.loads(resp or b"[]")
 
+    def product_types(self) -> dict[str, dict[str, object]]:
+        """Map each product-type id to its type object (``GET /productType/getAll``).
+
+        A product from :meth:`products` carries only ids and a ``licenseNumber`` -- no display
+        name and no capability flags; both live on its product type. The type's ``encryptions``
+        list tells whether an online certificate is possible (it contains ``"cloud"`` for
+        cloud-enabled types, e.g. ETS6; ETS5/older or add-on-only types do not), so callers resolve
+        both the name and cloud-capability via this map."""
+        status, resp = self._req("GET", "/productType/getAll")
+        if status // 100 != 2:
+            raise RuntimeError(
+                f"productType/getAll failed: HTTP {status}: {resp[:200]!r}"
+            )
+        types: list[dict[str, object]] = json.loads(resp or b"[]")
+        return {str(t.get("id") or ""): t for t in types}
+
     def project_certificate(
         self, product_id: str, project_hash_hex: str, project_name: str
     ) -> bytes:
-        """Request a project certificate for ``product_id`` (verified endpoint structure).
+        """Request a project certificate for ``product_id``.
 
-        Full flow (all confirmed against the live API): create a workset, claim it, add the product,
-        then ``POST /v1/workset/{ws}/product/{product_id}/certificate`` with
+        Flow: create a workset, claim it, add the product, then
+        ``POST /v1/workset/{ws}/product/{product_id}/certificate`` with
         ``{"projectHash","projectName"}``. Returns the certificate bytes. The product must be a
-        cloud-enabled ETS license: a non-ETS product yields HTTP 422
-        ("Encryption \"cloud\" is not enabled for product_type ...").
+        cloud-enabled license; others yield HTTP 422.
         """
         logger.debug("requesting project certificate", extra={"product_id": product_id})
         s, resp = self._req(
@@ -298,7 +354,7 @@ class MyKnxSession:
                     product_id,
                     detail,
                 )
-                # The most common failure: the picked license is not a cloud-enabled ETS product.
+                # The most common failure: the picked license is not cloud-enabled.
                 cloud_disabled = s == 422 and "cloud" in detail.lower()
                 user_message = (
                     (
@@ -320,6 +376,14 @@ class MyKnxSession:
             payload = json.dumps(
                 {"projectHash": project_hash_hex, "projectName": project_name}
             ).encode()
+            # projectHash is the base64 folder signature sent verbatim (see project_hash); log its
+            # length + prefix so a rejected certificate can be diagnosed from a user's log file.
+            logger.debug(
+                "certificate request: projectName=%s projectHash=%d chars prefix=%.24s",
+                project_name,
+                len(project_hash_hex),
+                project_hash_hex,
+            )
             s, resp = self._req(
                 "POST", f"/workset/{ws}/product/{product_id}/certificate", payload
             )
@@ -346,7 +410,7 @@ class MyKnxSession:
             # The endpoint returns the certificate as a bare JSON *string* (not an object), i.e.
             # the body is `"CERT KNX:\"...\"\n\tID=\"CloudLicense\"\n..."`. Returning it verbatim
             # writes the JSON escaping into {pid}.certificate, so the file starts with a quote and
-            # contains literal \n / \" — ETS then rejects the project as uncertified.
+            # contains literal \n / \" — the project is then rejected as uncertified.
             if text.startswith('"'):
                 try:
                     return normalize_certificate(json.loads(resp))
@@ -376,16 +440,40 @@ def obtain_certificate(
     )
 
 
+def _type_is_cloud_capable(product_type: dict[str, object] | None) -> bool:
+    """Return whether a product type can sign projects online.
+
+    A type carries an ``encryptions`` list; it contains ``"cloud"`` exactly for the types the
+    certificate endpoint accepts (ETS6 licenses and cloud-enabled add-ons). ETS5/older Professional
+    or dongle-only types have no ``"cloud"`` entry and always fail add-product with HTTP 422. This
+    mirrors ETS's own CloudKit license filter (IsExpired + HasFeature)."""
+    if product_type is None:
+        return False
+    encryptions = product_type.get("encryptions")
+    if not isinstance(encryptions, list):
+        return False
+    return "cloud" in encryptions
+
+
 def fetch_myknx_products(
     username: str, password: str, *, timeout: float = 30.0
 ) -> list[dict[str, object]]:
     """Log in and return the account's products/licenses (``GET /product/getAll``).
 
-    Used by the GUI so the user can pick a license instead of typing an opaque product id.
-    Blocking (network I/O); call from a worker thread."""
+    Each product is enriched with a ``name`` (its product-type name) and a ``cloud_capable`` flag
+    (whether its product type can sign projects online, see :func:`_type_is_cloud_capable`),
+    resolved via :meth:`MyKnxSession.product_types` because the product itself carries only ids and
+    a ``licenseNumber``. Used by the GUI so the user can pick a license by name and see which ones
+    can actually produce an online certificate. Blocking (network I/O); call from a worker thread."""
     session = MyKnxSession(access_token="", timeout=timeout)
     session.login(username, password)
-    return session.products()
+    products = session.products()
+    types = session.product_types()
+    for p in products:
+        product_type = types.get(str(p.get("productTypeId") or ""))
+        p["name"] = str(product_type.get("name") or "") if product_type else ""
+        p["cloud_capable"] = _type_is_cloud_capable(product_type)
+    return products
 
 
 def myknx_certificate_signer(
@@ -400,8 +488,8 @@ def myknx_certificate_signer(
     The returned callable logs into MyKnx with the user's own credentials and requests the
     server-signed project certificate for the exported folder signature, so a single
     ``export_knxproj(..., certificate_signer=myknx_certificate_signer(...))`` produces a
-    fully-signed, certified ``.knxproj``. Requires a cloud-enabled ETS product license on the
-    account (a non-ETS product yields HTTP 422). Blocking; call the export from a worker thread.
+    fully-signed, certified ``.knxproj``. Requires a cloud-enabled product license on the account
+    (others yield HTTP 422). Blocking; call the export from a worker thread.
     """
 
     def _sign(_pid: str, folder_signature: bytes, project_name: str) -> bytes:
@@ -442,7 +530,7 @@ def read_folder_signature(knxproj: Path | str) -> tuple[str, bytes]:
 def add_certificate_to_archive(knxproj: Path | str, certificate: bytes) -> None:
     """Add ``{pid}.certificate`` and ``.validation`` to an exported ``.knxproj`` in place.
 
-    ETS records the validation outcome in a top-level ``.validation`` with the certificate inlined;
+    The validation outcome is recorded in a top-level ``.validation`` with the certificate inlined;
     both are written so either reader is satisfied (see knxproj_export.validation_record).
     """
     from xknxeditor.proj.core.knxproj_export import validation_record
@@ -473,8 +561,8 @@ def sign_exported_knxproj(
     the server-signed certificate for ``product_id``, and writes ``{pid}.certificate`` plus
     ``.validation`` back into the archive. Blocking; call from a worker thread in a GUI.
 
-    ``project_name`` defaults to :func:`certificate_name` for the archive's own pid, which is what
-    ETS sends; pass a value only to override it deliberately.
+    ``project_name`` defaults to :func:`certificate_name` for the archive's own pid; pass a value
+    only to override it deliberately.
     """
     pid, folder_signature = read_folder_signature(knxproj)
     cert = obtain_certificate(
