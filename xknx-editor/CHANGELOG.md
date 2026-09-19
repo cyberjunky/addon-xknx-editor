@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.2 (2026-09-19)
+
+- The README's MCP examples gained one more: having a device's configuration reviewed (the case that
+  found a line coupler parameterised as a coupler while sitting at a device address).
+
 ## 0.4.1 (2026-09-19)
 
 - What a project lost when it was imported is shown: the Project dock lists it ("2 lines have more

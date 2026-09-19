@@ -162,6 +162,14 @@ lux, 9.005 for wind speed, 1.005 for an alarm) and sets them.
 and lists the silent ones; _"does 1.1.5 still hold what the project says?"_ reads the device back and
 compares it with what a download would write, without writing anything.
 
+**Have a device's configuration reviewed.** _"Is the line coupler set up the way it should be?"_ —
+it reads the parameters and the device, and says what does not add up: here that the coupler is
+parameterised as `Area / Line coupler` while sitting at `4.1.3` (a coupler belongs at `x.y.0`), that
+it filters group telegrams in both directions and therefore needs a filter table, that it has never
+been programmed from this project, and that its mask `0912` puts it in the BCU 1 family, which this
+add-on cannot program - so the fix belongs in ETS. Reading the device is harmless; it proposes,
+you decide.
+
 **Find things in a large project.** _"Where does 4/3/2 go?"_, _"which objects are on no address?"_,
 _"what changed since the last download?"_, _"what was on the bus at three in the morning?"_ (the
 recorded archive, with filters and statistics).
